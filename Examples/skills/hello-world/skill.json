@@ -1,0 +1,28 @@
+{
+  "id": "hello-world",
+  "name": "Hello World Skill",
+  "version": "0.1.0",
+  "summary": "Minimal sample skill that demonstrates SkillHub manifest format.",
+  "entrypoint": "README.md",
+  "tags": ["sample", "mvp"],
+  "adapters": [
+    {
+      "productID": "openclaw",
+      "installMode": "symlink",
+      "targetPath": "~/.config/opencode/skills/hello-world"
+    },
+    {
+      "productID": "claude-desktop",
+      "installMode": "copy",
+      "targetPath": "~/Library/Application Support/Claude/skills/hello-world"
+    },
+    {
+      "productID": "cursor",
+      "installMode": "config-patch",
+      "targetPath": "~/.cursor/skills/hello-world",
+      "configPatch": {
+        "skills.hello-world.enabled": "true"
+      }
+    }
+  ]
+}

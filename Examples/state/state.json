@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "skills": [
+    {
+      "enabledProducts": [
+        "openclaw"
+      ],
+      "installedProducts": [
+        "openclaw",
+        "claude-desktop"
+      ],
+      "lastInstallModeByProduct": {
+        "claude-desktop": "copy",
+        "openclaw": "symlink"
+      },
+      "manifest": {
+        "adapters": [
+          {
+            "installMode": "symlink",
+            "productID": "openclaw",
+            "targetPath": "~/.config/opencode/skills/hello-world"
+          }
+        ],
+        "entrypoint": "README.md",
+        "id": "hello-world",
+        "name": "Hello World Skill",
+        "summary": "Minimal sample skill.",
+        "tags": [
+          "sample"
+        ],
+        "version": "0.1.0"
+      },
+      "manifestPath": "/path/to/skills/hello-world/skill.json"
+    }
+  ],
+  "updatedAt": "2026-02-15T12:00:00Z"
+}
