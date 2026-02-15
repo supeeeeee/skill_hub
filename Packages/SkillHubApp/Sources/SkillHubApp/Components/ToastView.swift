@@ -22,7 +22,7 @@ enum ToastType {
     }
 }
 
-struct Toast: Identifiable {
+struct Toast: Identifiable, Equatable {
     let id = UUID()
     let message: String
     let type: ToastType

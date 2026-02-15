@@ -4,11 +4,13 @@ import SkillHubCore
 enum NavigationItem: Hashable, Identifiable {
     case products
     case skills
+    case activity
     
     var id: Self { self }
 }
 
 struct ContentView: View {
+    @EnvironmentObject private var viewModel: SkillHubViewModel
     @State private var selectedItem: NavigationItem? = .products
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var showCommandPalette = false
@@ -20,6 +22,8 @@ struct ContentView: View {
                     .tag(NavigationItem.products)
                 Label("Skills", systemImage: "wrench.and.screwdriver")
                     .tag(NavigationItem.skills)
+                Label("Activity", systemImage: "clock.arrow.circlepath")
+                    .tag(NavigationItem.activity)
             }
             .navigationTitle("SkillHub")
             .listStyle(.sidebar)
@@ -31,6 +35,8 @@ struct ContentView: View {
                         ProductsView()
                     case .skills:
                         SkillsView()
+                    case .activity:
+                        ActivityView()
                     }
                 }
                 .id(item)
@@ -58,6 +64,11 @@ struct ContentView: View {
             }
             .padding()
             .frame(width: 400, height: 250)
+        }
+        .overlay(alignment: .topTrailing) {
+            ToastHostView(toasts: $viewModel.toasts)
+                .padding(.top, 16)
+                .padding(.trailing, 16)
         }
         .background(
             Button("Toggle Command Palette") {
