@@ -5,8 +5,15 @@ struct ProductsView: View {
     @EnvironmentObject var viewModel: SkillHubViewModel
     
     var body: some View {
-        Group {
-            if viewModel.products.isEmpty {
+        ZStack {
+            if viewModel.isLoading {
+                VStack {
+                    Spacer()
+                    ProgressView("Loading...")
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if viewModel.products.isEmpty {
                 EmptyStateView(
                     title: "No Products Found",
                     message: "It looks like no products are currently available.",
@@ -17,7 +24,11 @@ struct ProductsView: View {
                     VStack(spacing: 12) {
                         ForEach(viewModel.products) { product in
                             NavigationLink(destination: ProductDetailView(product: product)) {
-                                ProductCardView(product: product)
+                                ProductCardView(
+                                    product: product,
+                                    installedSkillsCount: installedSkillsCount(for: product.id),
+                                    enabledSkillsCount: enabledSkillsCount(for: product.id)
+                                )
                             }
                             .buttonStyle(.plain)
                         }
@@ -31,5 +42,13 @@ struct ProductsView: View {
         .onAppear {
             viewModel.loadData()
         }
+    }
+    
+    private func installedSkillsCount(for productID: String) -> Int {
+        viewModel.skills.filter { $0.installedProducts.contains(productID) }.count
+    }
+    
+    private func enabledSkillsCount(for productID: String) -> Int {
+        viewModel.skills.filter { $0.enabledProducts.contains(productID) }.count
     }
 }

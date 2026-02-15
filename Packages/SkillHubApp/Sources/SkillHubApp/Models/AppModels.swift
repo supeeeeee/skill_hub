@@ -8,6 +8,7 @@ struct Product: Identifiable, Hashable, Sendable {
     let description: String
     let status: ProductStatus
     let supportedModes: [InstallMode]
+    var customSkillsPath: String? = nil // from SkillHubConfig.productSkillsDirectoryOverrides
 }
 
 enum ProductStatus: String, CaseIterable, Sendable {

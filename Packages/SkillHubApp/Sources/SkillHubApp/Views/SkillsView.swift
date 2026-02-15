@@ -10,6 +10,7 @@ struct SkillsView: View {
     @State private var showGitInput = false
     @State private var remoteURL = ""
     @State private var gitURL = ""
+    @State private var selectedProductForNavigation: Product?
     
     let columns = [
         GridItem(.adaptive(minimum: 300, maximum: 500), spacing: 16)
@@ -17,7 +18,14 @@ struct SkillsView: View {
     
     var body: some View {
         Group {
-            if viewModel.skills.isEmpty {
+            if viewModel.isLoading && viewModel.skills.isEmpty {
+                VStack {
+                    Spacer()
+                    ProgressView("Loading...")
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if viewModel.skills.isEmpty {
                 EmptyStateView(
                     title: "No Skills Installed",
                     message: "You haven't installed any skills yet.",
@@ -32,6 +40,10 @@ struct SkillsView: View {
                             NavigationLink(destination: SkillDetailView(skill: skill)) {
                                 SkillCardView(skill: skill) {
                                     setupSkill = skill
+                                } onNavigateToProduct: { productID in
+                                    if let product = viewModel.products.first(where: { $0.id == productID }) {
+                                        selectedProductForNavigation = product
+                                    }
                                 }
                             }
                             .buttonStyle(.plain)
@@ -49,6 +61,7 @@ struct SkillsView: View {
                 }) {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
+                .disabled(viewModel.isLoading)
             }
             
             ToolbarItem(placement: .primaryAction) {
@@ -67,7 +80,11 @@ struct SkillsView: View {
                 set: { if !$0 { setupSkill = nil } }
             ))
         }
-        // Add Options Sheet
+        .sheet(item: $selectedProductForNavigation) { product in
+            NavigationStack {
+                ProductDetailView(product: product)
+            }
+        }
         .sheet(isPresented: $showAddOptions) {
             AddSkillOptionsView(
                 onLocalFile: {
@@ -84,7 +101,6 @@ struct SkillsView: View {
                 }
             )
         }
-        // URL Input Sheet
         .sheet(isPresented: $showURLInput) {
             RemoteInputView(
                 title: "Add from URL",
@@ -104,7 +120,6 @@ struct SkillsView: View {
                 }
             )
         }
-        // Git Input Sheet
         .sheet(isPresented: $showGitInput) {
             RemoteInputView(
                 title: "Add from GitHub",

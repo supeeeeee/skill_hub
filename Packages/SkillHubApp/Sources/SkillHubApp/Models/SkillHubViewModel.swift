@@ -7,6 +7,8 @@ class SkillHubViewModel: ObservableObject {
     @Published var products: [Product] = []
     @Published var skills: [InstalledSkillRecord] = []
     @Published var logs: [ActivityLog] = []
+    @Published var toasts: [Toast] = []
+    @Published var isLoading = false
     
     private let skillStore: SkillStore
     let adapterRegistry: AdapterRegistry
@@ -29,6 +31,7 @@ class SkillHubViewModel: ObservableObject {
     }
     
     func loadData() {
+        isLoading = true
         // Load skills
         do {
             let state = try skillStore.loadState()
@@ -40,6 +43,7 @@ class SkillHubViewModel: ObservableObject {
         }
         
         // Load products
+        let cfg = SkillHubConfig.load()
         var newProducts: [Product] = []
         for adapter in adapterRegistry.all() {
             let detection = adapter.detect()
@@ -51,11 +55,13 @@ class SkillHubViewModel: ObservableObject {
                 iconName: iconName(for: adapter.id),
                 description: detection.reason,
                 status: status,
-                supportedModes: adapter.supportedInstallModes
+                supportedModes: adapter.supportedInstallModes,
+                customSkillsPath: cfg.productSkillsDirectoryOverrides[adapter.id]
             )
             newProducts.append(product)
         }
         self.products = newProducts
+        isLoading = false
     }
     
     func log(_ message: String, type: LogType = .info) {
@@ -65,6 +71,26 @@ class SkillHubViewModel: ObservableObject {
             logs.removeLast()
         }
         logs.insert(log, at: 0)
+        
+        // Show toast for success/error
+        switch type {
+        case .success:
+            showToast(message: message, type: .success)
+        case .error:
+            showToast(message: message, type: .error)
+        case .info:
+            break
+        }
+    }
+    
+    func showToast(message: String, type: ToastType) {
+        let toast = Toast(message: message, type: type)
+        toasts.append(toast)
+        
+        // Auto dismiss after 3 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            self.toasts.removeAll { $0.id == toast.id }
+        }
     }
     
     private func iconName(for id: String) -> String {

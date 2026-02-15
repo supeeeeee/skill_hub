@@ -3,6 +3,8 @@ import SkillHubCore
 
 struct ProductCardView: View {
     let product: Product
+    var installedSkillsCount: Int = 0
+    var enabledSkillsCount: Int = 0
     
     var body: some View {
         HStack {
@@ -19,6 +21,17 @@ struct ProductCardView: View {
                 Text(product.description)
                     .font(.caption)
                     .foregroundColor(.secondary)
+                
+                if installedSkillsCount > 0 {
+                    HStack(spacing: 8) {
+                        Label("\(enabledSkillsCount) enabled", systemImage: "checkmark.circle.fill")
+                            .font(.caption2)
+                            .foregroundColor(.green)
+                        Label("\(installedSkillsCount - enabledSkillsCount) installed", systemImage: "arrow.down.circle")
+                            .font(.caption2)
+                            .foregroundColor(.blue)
+                    }
+                }
             }
             
             Spacer()

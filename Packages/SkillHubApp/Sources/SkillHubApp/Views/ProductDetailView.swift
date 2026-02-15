@@ -8,6 +8,8 @@ struct ProductDetailView: View {
     @State private var filter: FilterState = .all
     @State private var searchText = ""
     @State private var productDetection: ProductDetectionResult?
+    @State private var showPathEditor = false
+    @State private var editingPath = ""
     
     enum FilterState: String, CaseIterable, Identifiable {
         case all = "All"
@@ -65,6 +67,39 @@ struct ProductDetailView: View {
                 .padding()
                 .background(Color.accentColor.opacity(0.1))
                 .cornerRadius(12)
+                
+                // Skills Directory Section
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Label("Skills Directory", systemImage: "folder")
+                            .font(.headline)
+                        
+                        Spacer()
+                        
+                        Button(action: {
+                            editingPath = product.customSkillsPath ?? defaultSkillsPath(for: product.id)
+                            showPathEditor = true
+                        }) {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                    
+                    HStack {
+                        Image(systemName: "folder.fill")
+                            .foregroundColor(.secondary)
+                        Text(product.customSkillsPath ?? defaultSkillsPath(for: product.id))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                    }
+                    .padding(12)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(8)
+                }
                 
                 Divider()
                 
@@ -141,6 +176,105 @@ struct ProductDetailView: View {
                     set: { if !$0 { setupSkill = nil } }
                 )
             )
+        }
+        .sheet(isPresented: $showPathEditor) {
+            VStack(spacing: 20) {
+                HStack {
+                    Text("Edit Skills Directory")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    Spacer()
+                    Button(action: { showPathEditor = false }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                
+                HStack {
+                    Image(systemName: "app.badge")
+                        .font(.title2)
+                        .foregroundColor(.accentColor)
+                    Text(product.name)
+                        .font(.headline)
+                }
+                
+                Divider()
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Custom Skills Directory")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    
+                    TextField("Enter custom path or leave empty for default", text: $editingPath)
+                        .textFieldStyle(.roundedBorder)
+                    
+                    Button(action: { editingPath = "" }) {
+                        Label("Use Default Path", systemImage: "arrow.counterclockwise")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Will use:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(editingPath.isEmpty ? defaultSkillsPath(for: product.id) : editingPath)
+                        .font(.caption)
+                        .foregroundColor(editingPath.isEmpty ? .orange : .primary)
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.secondary.opacity(0.1))
+                        .cornerRadius(6)
+                }
+                
+                Spacer()
+                
+                HStack {
+                    Button("Cancel") {
+                        showPathEditor = false
+                    }
+                    .buttonStyle(.bordered)
+                    
+                    Spacer()
+                    
+                    Button("Save") {
+                        do {
+                            var cfg = SkillHubConfig.load()
+                            let trimmed = editingPath.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if trimmed.isEmpty {
+                                cfg.productSkillsDirectoryOverrides.removeValue(forKey: product.id)
+                            } else {
+                                cfg.productSkillsDirectoryOverrides[product.id] = trimmed
+                            }
+                            try cfg.save()
+                            viewModel.loadData()
+                            showPathEditor = false
+                        } catch {
+                            // Best-effort: just close for now
+                            showPathEditor = false
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            .padding(20)
+            .frame(width: 450, height: 350)
+        }
+    }
+    
+    private func defaultSkillsPath(for productID: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        switch productID {
+        case "openclaw": return "\(home)/.openclaw/skills"
+        case "opencode": return "\(home)/.config/opencode/skills"
+        case "codex": return "\(home)/.codex/skills"
+        case "cursor": return "\(home)/.cursor/skills"
+        case "claude-code": return "\(home)/.claude/skills"
+        default: return "\(home)/.skillhub/products/\(productID)/skills"
         }
     }
 }
@@ -228,5 +362,109 @@ struct ProductSkillRow: View {
         .padding()
         .background(Color.accentColor.opacity(0.1))
         .cornerRadius(8)
+    }
+}
+
+struct CustomPathEditorSheet: View {
+    let productName: String
+    let currentPath: String
+    @Binding var isPresented: Bool
+    let onSave: (String) -> Void
+    
+    @State private var customPath: String = ""
+    @State private var showError = false
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            // Header
+            HStack {
+                Text("Edit Skills Directory")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Spacer()
+                Button(action: { isPresented = false }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            
+            // Product info
+            HStack {
+                Image(systemName: "app.badge")
+                    .font(.title2)
+                    .foregroundColor(.accentColor)
+                Text(productName)
+                    .font(.headline)
+            }
+            
+            Divider()
+            
+            // Path input
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Custom Skills Directory")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                
+                TextField("Enter custom path or leave empty for default", text: $customPath)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: customPath) { newValue in
+                        showError = !newValue.isEmpty && !newValue.hasPrefix("/")
+                    }
+                
+                if showError {
+                    Text("Path must be an absolute path (start with /)")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+                
+                // Reset button
+                Button(action: { customPath = "" }) {
+                    Label("Use Default Path", systemImage: "arrow.counterclockwise")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            
+            // Current path preview
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Will use:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(customPath.isEmpty ? currentPath : customPath)
+                    .font(.caption)
+                    .foregroundColor(customPath.isEmpty ? .orange : .primary)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.secondary.opacity(0.1))
+                    .cornerRadius(6)
+            }
+            
+            Spacer()
+            
+            // Actions
+            HStack {
+                Button("Cancel") {
+                    isPresented = false
+                }
+                .buttonStyle(.bordered)
+                
+                Spacer()
+                
+                Button("Save") {
+                    onSave(customPath)
+                    isPresented = false
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(showError)
+            }
+        }
+        .padding(20)
+        .frame(width: 450, height: 350)
+        .onAppear {
+            customPath = currentPath
+        }
     }
 }
