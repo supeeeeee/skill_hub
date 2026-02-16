@@ -5,77 +5,96 @@ struct ProductDetailView: View {
     let product: Product
     @EnvironmentObject var viewModel: SkillHubViewModel
     @State private var setupSkill: InstalledSkillRecord?
-    @State private var filter: FilterState = .all
     @State private var searchText = ""
     @State private var productDetection: ProductDetectionResult?
     @State private var showPathEditor = false
     @State private var editingPath = ""
-    
-    enum FilterState: String, CaseIterable, Identifiable {
-        case all = "All"
-        case installed = "Installed"
-        case enabled = "Enabled"
-        var id: String { rawValue }
-    }
-    
-    var filteredSkills: [InstalledSkillRecord] {
+
+    var activeSkills: [InstalledSkillRecord] {
         viewModel.skills.filter { skill in
-            let matchesSearch = searchText.isEmpty ||
-                skill.manifest.name.localizedCaseInsensitiveContains(searchText) ||
-                skill.manifest.id.localizedCaseInsensitiveContains(searchText)
-            guard matchesSearch else { return false }
-            switch filter {
-            case .all: return true
-            case .installed: return skill.installedProducts.contains(product.id)
-            case .enabled: return skill.enabledProducts.contains(product.id)
-            }
+            matchesSearch(skill) && skill.installedProducts.contains(product.id)
         }
     }
-    
+
+    var librarySkills: [InstalledSkillRecord] {
+        viewModel.skills.filter { skill in
+            matchesSearch(skill) && !skill.installedProducts.contains(product.id)
+        }
+    }
+
+    private func matchesSearch(_ skill: InstalledSkillRecord) -> Bool {
+        searchText.isEmpty ||
+        skill.manifest.name.localizedCaseInsensitiveContains(searchText) ||
+        skill.manifest.id.localizedCaseInsensitiveContains(searchText)
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 // Product Summary Card
-                HStack(alignment: .top, spacing: 16) {
+                HStack(alignment: .top, spacing: 20) {
                     Image(systemName: product.iconName)
                         .font(.system(size: 48))
                         .foregroundColor(.accentColor)
-                        .frame(width: 64, height: 64)
+                        .frame(width: 80, height: 80)
                         .background(Color.accentColor.opacity(0.1))
-                        .cornerRadius(12)
-                    
+                        .cornerRadius(16)
+
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(product.name)
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        
+                        HStack {
+                            Text(product.name)
+                                .font(.title2)
+                                .fontWeight(.bold)
+
+                            Spacer()
+
+                            // Summary Badge
+                            if !activeSkills.isEmpty {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "bolt.fill")
+                                        .font(.caption2)
+                                    Text("\(activeSkills.count) Active")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.accentColor.opacity(0.1))
+                                .foregroundColor(.accentColor)
+                                .cornerRadius(12)
+                            }
+                        }
+
                         Text(product.description)
                             .font(.subheadline)
                             .foregroundColor(.secondary)
-                        
+                            .lineLimit(2)
+
                         HStack(spacing: 8) {
                             StatusBadgeView(status: productDetection?.isDetected == true ? .active : .notInstalled)
-                            
+
                             ForEach(product.supportedModes, id: \.self) { mode in
                                 ModePillView(mode: mode)
                             }
                         }
                     }
-                    
-                    Spacer()
                 }
-                .padding()
-                .background(Color.accentColor.opacity(0.1))
+                .padding(20)
+                .background(Color(nsColor: .controlBackgroundColor))
                 .cornerRadius(12)
-                
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.secondary.opacity(0.1), lineWidth: 1)
+                )
+
                 // Skills Directory Section
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Label("Skills Directory", systemImage: "folder")
                             .font(.headline)
-                        
+
                         Spacer()
-                        
+
                         Button(action: {
                             editingPath = product.customSkillsPath ?? defaultSkillsPath(for: product.id)
                             showPathEditor = true
@@ -85,7 +104,7 @@ struct ProductDetailView: View {
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                     }
-                    
+
                     HStack {
                         Image(systemName: "folder.fill")
                             .foregroundColor(.secondary)
@@ -100,17 +119,17 @@ struct ProductDetailView: View {
                     .background(Color(nsColor: .controlBackgroundColor))
                     .cornerRadius(8)
                 }
-                
+
                 Divider()
-                
+
                 // Skills Section Header
                 HStack {
-                    Text("Skills")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                    
+                    Text("Skills Management")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+
                     Spacer()
-                    
+
                     if productDetection?.isDetected != true {
                         Button("Run Doctor") {
                             // Navigate to Doctor or show hint
@@ -119,47 +138,90 @@ struct ProductDetailView: View {
                         .controlSize(.small)
                     }
                 }
-                
+
                 // Filters & Search
                 if !viewModel.skills.isEmpty {
-                    VStack(spacing: 12) {
-                        Picker("Filter", selection: $filter) {
-                            ForEach(FilterState.allCases) { f in
-                                Text(f.rawValue).tag(f)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        
-                        TextField("Search skills (name or ID)...", text: $searchText)
-                            .textFieldStyle(.roundedBorder)
-                    }
+                    TextField("Search skills (name or ID)...", text: $searchText)
+                        .textFieldStyle(.roundedBorder)
                 }
-                
+
                 // Skills List
-                if viewModel.skills.isEmpty {
-                    Text("No skills installed.")
+                let unregistered = viewModel.unregisteredSkillsByProduct[product.id] ?? []
+                let hasUnregistered = !unregistered.isEmpty
+
+                if viewModel.skills.isEmpty && !hasUnregistered {
+                    Text("No skills found in library.")
                         .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding()
-                } else if filteredSkills.isEmpty {
+                } else if activeSkills.isEmpty && librarySkills.isEmpty && !hasUnregistered {
                     Text("No matching skills found.")
                         .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding()
                 } else {
-                    LazyVStack(spacing: 12) {
-                        ForEach(filteredSkills) { skill in
-                            ProductSkillRow(
-                                product: product,
-                                skill: skill,
-                                productDetected: productDetection?.isDetected ?? false,
-                                onSetup: { setupSkill = skill }
-                            )
+                    LazyVStack(alignment: .leading, spacing: 32) {
+                        // Detected Local Skills Section
+                        if hasUnregistered {
+                            VStack(alignment: .leading, spacing: 16) {
+                                Label("Detected Local Skills", systemImage: "sparkles")
+                                    .font(.headline)
+                                    .foregroundColor(.purple)
+                                    .padding(.horizontal, 4)
+
+                                VStack(spacing: 12) {
+                                    ForEach(unregistered, id: \.id) { manifest in
+                                        UnregisteredSkillRow(manifest: manifest, product: product)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Active Skills Section
+                        if !activeSkills.isEmpty {
+                            VStack(alignment: .leading, spacing: 16) {
+                                Label("Installed & Active", systemImage: "checkmark.circle.fill")
+                                    .font(.headline)
+                                    .foregroundColor(.green)
+                                    .padding(.horizontal, 4)
+
+                                VStack(spacing: 12) {
+                                    ForEach(activeSkills) { skill in
+                                        ProductSkillRow(
+                                            product: product,
+                                            skill: skill,
+                                            productDetected: productDetection?.isDetected ?? false,
+                                            onSetup: { setupSkill = skill }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Library Skills Section
+                        if !librarySkills.isEmpty {
+                            VStack(alignment: .leading, spacing: 16) {
+                                Label("Available from Library", systemImage: "books.vertical.fill")
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
+                                    .padding(.horizontal, 4)
+
+                                VStack(spacing: 12) {
+                                    ForEach(librarySkills) { skill in
+                                        ProductSkillRow(
+                                            product: product,
+                                            skill: skill,
+                                            productDetected: productDetection?.isDetected ?? false,
+                                            onSetup: { setupSkill = skill }
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
-            .padding()
+            .padding(24)
         }
         .navigationTitle(product.name)
         .onAppear {
@@ -178,94 +240,29 @@ struct ProductDetailView: View {
             )
         }
         .sheet(isPresented: $showPathEditor) {
-            VStack(spacing: 20) {
-                HStack {
-                    Text("Edit Skills Directory")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    Spacer()
-                    Button(action: { showPathEditor = false }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title2)
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-                
-                HStack {
-                    Image(systemName: "app.badge")
-                        .font(.title2)
-                        .foregroundColor(.accentColor)
-                    Text(product.name)
-                        .font(.headline)
-                }
-                
-                Divider()
-                
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Custom Skills Directory")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    
-                    TextField("Enter custom path or leave empty for default", text: $editingPath)
-                        .textFieldStyle(.roundedBorder)
-                    
-                    Button(action: { editingPath = "" }) {
-                        Label("Use Default Path", systemImage: "arrow.counterclockwise")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Will use:")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text(editingPath.isEmpty ? defaultSkillsPath(for: product.id) : editingPath)
-                        .font(.caption)
-                        .foregroundColor(editingPath.isEmpty ? .orange : .primary)
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.secondary.opacity(0.1))
-                        .cornerRadius(6)
-                }
-                
-                Spacer()
-                
-                HStack {
-                    Button("Cancel") {
-                        showPathEditor = false
-                    }
-                    .buttonStyle(.bordered)
-                    
-                    Spacer()
-                    
-                    Button("Save") {
-                        do {
-                            var cfg = SkillHubConfig.load()
-                            let trimmed = editingPath.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if trimmed.isEmpty {
-                                cfg.productSkillsDirectoryOverrides.removeValue(forKey: product.id)
-                            } else {
-                                cfg.productSkillsDirectoryOverrides[product.id] = trimmed
-                            }
-                            try cfg.save()
-                            viewModel.loadData()
-                            showPathEditor = false
-                        } catch {
-                            // Best-effort: just close for now
-                            showPathEditor = false
+            CustomPathEditorSheet(
+                productName: product.name,
+                currentPath: editingPath,
+                isPresented: $showPathEditor,
+                onSave: { newPath in
+                    do {
+                        var cfg = SkillHubConfig.load()
+                        let trimmed = newPath.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if trimmed.isEmpty {
+                            cfg.productSkillsDirectoryOverrides.removeValue(forKey: product.id)
+                        } else {
+                            cfg.productSkillsDirectoryOverrides[product.id] = trimmed
                         }
+                        try cfg.save()
+                        viewModel.loadData()
+                    } catch {
+                        print("Failed to save config: \(error)")
                     }
-                    .buttonStyle(.borderedProminent)
                 }
-            }
-            .padding(20)
-            .frame(width: 450, height: 350)
+            )
         }
     }
-    
+
     private func defaultSkillsPath(for productID: String) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         switch productID {
@@ -279,63 +276,112 @@ struct ProductDetailView: View {
     }
 }
 
+struct UnregisteredSkillRow: View {
+    let manifest: SkillManifest
+    let product: Product
+    @EnvironmentObject var viewModel: SkillHubViewModel
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "sparkles")
+                .font(.title2)
+                .foregroundColor(.purple)
+                .frame(width: 44, height: 44)
+                .background(Color.purple.opacity(0.1))
+                .cornerRadius(8)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(manifest.name)
+                    .font(.headline)
+                Text("Found locally in \(product.name)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Button("Acquire & Manage") {
+                Task {
+                    await viewModel.acquireSkill(manifest: manifest, fromProduct: product.id)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.purple)
+            .controlSize(.small)
+        }
+        .padding()
+        .background(Color(nsColor: .controlBackgroundColor))
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.purple.opacity(0.3), lineWidth: 1)
+        )
+    }
+}
+
 struct ProductSkillRow: View {
     let product: Product
     let skill: InstalledSkillRecord
     let productDetected: Bool
     let onSetup: () -> Void
     @EnvironmentObject var viewModel: SkillHubViewModel
-    
+
     private var isInstalled: Bool {
         skill.installedProducts.contains(product.id)
     }
-    
+
     private var isEnabled: Bool {
         skill.enabledProducts.contains(product.id)
     }
-    
+
     private var installMode: InstallMode? {
         skill.lastInstallModeByProduct[product.id]
     }
-    
+
     private var statusDetail: String {
         if !productDetected { return "Product not detected" }
-        if !isInstalled { return "Not installed" }
+        if !isInstalled { return "Available to install" }
+
+        let status = isEnabled ? "Enabled" : "Disabled"
         if let mode = installMode {
-            return isEnabled ? "Enabled (\(mode.rawValue)" : "Installed (\(mode.rawValue)"
+            let modeLabel: String
+            switch mode {
+            case .symlink: modeLabel = "Synced"
+            case .copy: modeLabel = "Standalone Copy"
+            case .configPatch: modeLabel = "Native"
+            case .auto: modeLabel = "Smart Install"
+            }
+            return "\(status) (\(modeLabel))"
         }
-        return isEnabled ? "Enabled" : "Installed"
+        return status
     }
-    
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "wrench.and.screwdriver.fill")
+            Image(systemName: isInstalled ? "checkmark.circle.fill" : "arrow.down.circle")
                 .font(.title2)
-                .foregroundColor(.accentColor)
+                .foregroundColor(isInstalled ? (isEnabled ? .green : .secondary) : .accentColor)
                 .frame(width: 44, height: 44)
                 .background(Color.accentColor.opacity(0.1))
                 .cornerRadius(8)
-            
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(skill.manifest.name)
                     .font(.headline)
                 Text(statusDetail)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(isEnabled ? .primary : .secondary)
             }
-            
+
             Spacer()
-            
-            // CTA Area
+
             if !productDetected {
-                Button("Run Doctor") {
-                    // Guide user
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(true)
+                Button("Run Doctor") {}
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(true)
             } else if !isInstalled {
-                Button("Setup & Enable") {
+                Button("Install to Product") {
                     onSetup()
                 }
                 .buttonStyle(.borderedProminent)
@@ -356,12 +402,15 @@ struct ProductSkillRow: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .tint(.orange)
             }
         }
         .padding()
-        .background(Color.accentColor.opacity(0.1))
+        .background(Color(nsColor: .controlBackgroundColor))
         .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+        )
     }
 }
 
@@ -370,13 +419,12 @@ struct CustomPathEditorSheet: View {
     let currentPath: String
     @Binding var isPresented: Bool
     let onSave: (String) -> Void
-    
+
     @State private var customPath: String = ""
     @State private var showError = false
-    
+
     var body: some View {
         VStack(spacing: 20) {
-            // Header
             HStack {
                 Text("Edit Skills Directory")
                     .font(.title2)
@@ -389,8 +437,7 @@ struct CustomPathEditorSheet: View {
                 }
                 .buttonStyle(.plain)
             }
-            
-            // Product info
+
             HStack {
                 Image(systemName: "app.badge")
                     .font(.title2)
@@ -398,28 +445,26 @@ struct CustomPathEditorSheet: View {
                 Text(productName)
                     .font(.headline)
             }
-            
+
             Divider()
-            
-            // Path input
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("Custom Skills Directory")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
-                
+
                 TextField("Enter custom path or leave empty for default", text: $customPath)
                     .textFieldStyle(.roundedBorder)
                     .onChange(of: customPath) { newValue in
                         showError = !newValue.isEmpty && !newValue.hasPrefix("/")
                     }
-                
+
                 if showError {
                     Text("Path must be an absolute path (start with /)")
                         .font(.caption)
                         .foregroundColor(.red)
                 }
-                
-                // Reset button
+
                 Button(action: { customPath = "" }) {
                     Label("Use Default Path", systemImage: "arrow.counterclockwise")
                         .font(.caption)
@@ -427,8 +472,7 @@ struct CustomPathEditorSheet: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
             }
-            
-            // Current path preview
+
             VStack(alignment: .leading, spacing: 4) {
                 Text("Will use:")
                     .font(.caption)
@@ -441,18 +485,17 @@ struct CustomPathEditorSheet: View {
                     .background(Color.secondary.opacity(0.1))
                     .cornerRadius(6)
             }
-            
+
             Spacer()
-            
-            // Actions
+
             HStack {
                 Button("Cancel") {
                     isPresented = false
                 }
                 .buttonStyle(.bordered)
-                
+
                 Spacer()
-                
+
                 Button("Save") {
                     onSave(customPath)
                     isPresented = false

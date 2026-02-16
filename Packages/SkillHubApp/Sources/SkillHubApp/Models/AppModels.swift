@@ -23,16 +23,3 @@ struct SkillBinding: Identifiable, Sendable {
     let products: [String] // List of product IDs
     let isEnabled: Bool
 }
-
-struct ActivityLog: Identifiable, Sendable {
-    let id = UUID()
-    let timestamp: Date
-    let message: String
-    let type: LogType
-}
-
-enum LogType: Sendable {
-    case info
-    case success
-    case error
-}

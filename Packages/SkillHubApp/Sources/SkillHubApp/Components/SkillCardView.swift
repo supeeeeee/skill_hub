@@ -28,7 +28,6 @@ struct ProductStatusView: View {
     let productName: String
     let status: SkillProductStatus
     let onToggle: () -> Void
-    let onSetup: () -> Void
     var onNavigateToProduct: (() -> Void)? = nil
     
     var body: some View {
@@ -63,12 +62,6 @@ struct ProductStatusView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-            } else {
-                Button("Install") {
-                    onSetup()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
             }
         }
         .padding(.vertical, 4)
@@ -80,113 +73,129 @@ struct ProductStatusView: View {
 
 struct SkillCardView: View {
     let skill: InstalledSkillRecord
-    var onSetup: (() -> Void)? = nil
-    var onNavigateToProduct: ((String) -> Void)? = nil
-    @State private var isExpanded = false
     
-    private let allProducts = ["openclaw", "opencode", "codex"]
-    private let productNames = ["openclaw": "OpenClaw", "opencode": "OpenCode", "codex": "Codex"]
+    private let productIcons: [String: String] = [
+        "openclaw": "terminal.fill",
+        "opencode": "hammer.fill",
+        "codex": "book.closed.fill",
+        "cursor": "cursorarrow.rays",
+        "claude-code": "brain.head.profile"
+    ]
     
-    private func getStatus(for productID: String) -> SkillProductStatus {
-        if skill.enabledProducts.contains(productID) {
-            return .enabled
-        } else if skill.installedProducts.contains(productID) {
-            return .installed
-        } else {
-            return .notInstalled
-        }
-    }
+    private let productColors: [String: Color] = [
+        "openclaw": .orange,
+        "opencode": .blue,
+        "codex": .purple,
+        "cursor": .cyan,
+        "claude-code": .indigo
+    ]
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading) {
-                    Text(skill.manifest.name)
-                        .font(.headline)
-                    Text("v\(skill.manifest.version)")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
-                        .background(Color.secondary.opacity(0.1))
-                        .cornerRadius(4)
-                }
-                Spacer()
-                
-                Button(action: { withAnimation { isExpanded.toggle() }}) {
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-            
-            Text(skill.manifest.summary)
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            
-            HStack {
-                ForEach(skill.manifest.tags.prefix(3), id: \.self) { tag in
-                    Text("#\(tag)")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-            }
-            
-            HStack(spacing: 8) {
-                ForEach(allProducts, id: \.self) { productID in
-                    let status = getStatus(for: productID)
-                    Text("\(productNames[productID] ?? productID): \(status.icon)")
-                        .font(.caption)
-                        .foregroundColor(status.color)
-                }
-                Spacer()
-            }
-            
-            if isExpanded {
-                Divider()
-                
-                VStack(spacing: 8) {
-                    ForEach(allProducts, id: \.self) { productID in
-                        let status = getStatus(for: productID)
-                        ProductStatusView(
-                            productID: productID,
-                            productName: productNames[productID] ?? productID,
-                            status: status,
-                            onToggle: {},
-                            onSetup: {},
-                            onNavigateToProduct: { onNavigateToProduct?(productID) }
-                        )
-                    }
-                }
-            }
-            
-            Divider()
-            
-            HStack {
-                Text("\(skill.installedProducts.count) installs")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+            HStack(alignment: .top) {
+                nameAndVersionView
                 
                 Spacer()
                 
-                Button("Setup") {
-                    onSetup?()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                badgesView
             }
+            
+            descriptionView
+            
+            Spacer(minLength: 0)
+            
+            footerView
         }
-        .padding()
-        .frame(maxWidth: .infinity, minHeight: isExpanded ? 320 : 220, alignment: .topLeading)
+        .padding(16)
+        .frame(height: 160)
         .background(Color(nsColor: .controlBackgroundColor))
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                .stroke(Color.primary.opacity(0.05), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+        .shadow(color: Color.black.opacity(0.03), radius: 4, x: 0, y: 2)
+        .contentShape(Rectangle()) // Improves hover/click area
+    }
+    
+    private var nameAndVersionView: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(skill.manifest.name)
+                .font(.headline)
+                .foregroundColor(.primary)
+                .lineLimit(1)
+            
+            Text("v\(skill.manifest.version)")
+                .font(.caption2)
+                .fontDesign(.monospaced)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.secondary.opacity(0.1))
+                .cornerRadius(4)
+        }
+    }
+    
+    private var badgesView: some View {
+        HStack(spacing: -4) {
+            ForEach(skill.installedProducts.sorted(), id: \.self) { productID in
+                if let icon = productIcons[productID] {
+                    productBadge(productID: productID, icon: icon)
+                }
+            }
+            
+            if skill.installedProducts.isEmpty {
+                Text("Not installed")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+    
+    private func productBadge(productID: String, icon: String) -> some View {
+        ZStack {
+            Circle()
+                .fill(Color(nsColor: .controlBackgroundColor))
+                .frame(width: 26, height: 26)
+            
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .foregroundColor(skill.enabledProducts.contains(productID) ? (productColors[productID] ?? .primary) : .gray)
+                .frame(width: 22, height: 22)
+                .background(skill.enabledProducts.contains(productID) ? (productColors[productID] ?? .primary).opacity(0.15) : Color.gray.opacity(0.1))
+                .clipShape(Circle())
+                .overlay(
+                    Circle()
+                        .stroke(Color.secondary.opacity(0.1), lineWidth: 1)
+                )
+        }
+        .help("\(productID): \(skill.enabledProducts.contains(productID) ? "Enabled" : "Disabled")")
+    }
+    
+    private var descriptionView: some View {
+        Text(skill.manifest.summary)
+            .font(.subheadline)
+            .foregroundColor(.secondary)
+            .lineLimit(3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    
+    @ViewBuilder
+    private var footerView: some View {
+        if !skill.manifest.tags.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(skill.manifest.tags.prefix(3), id: \.self) { tag in
+                        Text("#\(tag)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.secondary.opacity(0.05))
+                            .cornerRadius(4)
+                    }
+                }
+            }
+        }
     }
 }

@@ -10,7 +10,21 @@ struct ApplySkillView: View {
     @State private var selectedProduct: String = ""
     @State private var selectedMode: InstallMode = .auto
     @State private var isInstalling = false
-    @State private var installError: String?
+    @State private var installationStatus: (message: String, type: MessageType)? // New state for detailed status
+    @State private var isInstallationComplete = false // New state to control button/dismissal
+    
+    enum MessageType {
+        case info, success, error, warning
+        
+        var color: Color {
+            switch self {
+            case .info: return .blue
+            case .success: return .green
+            case .error: return .red
+            case .warning: return .orange
+            }
+        }
+    }
     
     var availableProducts: [Product] {
         viewModel.products.filter { $0.status == .active }
@@ -22,10 +36,13 @@ struct ApplySkillView: View {
                 .font(.title2)
                 .fontWeight(.bold)
             
-            if let error = installError {
-                Text(error)
-                    .foregroundColor(.red)
-                    .font(.caption)
+            // Display installation status message
+            if let status = installationStatus {
+                Text(status.message)
+                    .foregroundColor(status.type.color)
+                    .font(.callout)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
             }
             
             Form {
@@ -48,25 +65,43 @@ struct ApplySkillView: View {
                     }
                 }
                 
-                Picker("Mode", selection: $selectedMode) {
-                    ForEach(InstallMode.allCases, id: \.self) { mode in
-                        Text(mode.rawValue.capitalized).tag(mode)
+                DisclosureGroup("Advanced Options") {
+                    VStack(alignment: .leading) {
+                        Picker("Install Mode", selection: $selectedMode) {
+                            ForEach(InstallMode.allCases, id: \.self) { mode in
+                                Text(self.friendlyModeName(mode)).tag(mode)
+                            }
+                        }
+                        Text("Choose how the skill will be installed.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
             }
             .padding()
+            .disabled(isInstalling || isInstallationComplete) // Disable form during/after install
             
             HStack {
                 Button("Cancel") {
                     isPresented = false
                 }
                 .keyboardShortcut(.cancelAction)
+                .disabled(isInstalling) // Cannot cancel during installation
                 
-                Button("Install") {
-                    install()
+                Spacer()
+                
+                if !isInstallationComplete {
+                    Button("Smart Install") {
+                        install()
+                    }
+                    .disabled(selectedProduct.isEmpty || isInstalling)
+                    .keyboardShortcut(.defaultAction)
+                } else {
+                    Button("Done") {
+                        isPresented = false
+                    }
+                    .keyboardShortcut(.defaultAction)
                 }
-                .disabled(selectedProduct.isEmpty || isInstalling)
-                .keyboardShortcut(.defaultAction)
             }
             
             if isInstalling {
@@ -82,20 +117,56 @@ struct ApplySkillView: View {
         }
     }
     
+    func friendlyModeName(_ mode: InstallMode) -> String {
+        switch mode {
+        case .symlink: return "Synced (Recommended)"
+        case .copy: return "Standalone Copy"
+        case .configPatch: return "Native Integration"
+        case .auto: return "Auto (Smart Select)"
+        }
+    }
+
     func install() {
-        guard !selectedProduct.isEmpty else { return }
+        guard !selectedProduct.isEmpty else {
+            installationStatus = ("Please select a product.", .warning)
+            return
+        }
         
         isInstalling = true
-        installError = nil
+        installationStatus = ("Initiating installation...", .info)
         
         Task {
-            await viewModel.installSkill(manifest: skill.manifest, productID: selectedProduct, mode: selectedMode)
+            // Assume viewModel.installSkill now returns a more detailed result
+            // e.g., (success: Bool, message: String, isStubbed: Bool)
+            let (success, message, isStubbed) = await viewModel.installSkill(
+                manifest: skill.manifest,
+                productID: selectedProduct,
+                mode: selectedMode
+            ) // This line would need to be updated in SkillHubViewModel
             
-            // Basic error handling based on logs could be better, but simplified for now
-            // In a real app we might want viewModel.installSkill to throw or return result
+            if success {
+                let summary: String
+                switch selectedMode {
+                case .symlink:
+                    summary = "Installed in Synced mode. Changes will sync across all apps."
+                case .copy:
+                    summary = "Installed as Standalone Copy. Updates won't sync automatically."
+                case .configPatch:
+                    summary = "Installed via Native Integration."
+                case .auto:
+                    summary = "Smart Install complete."
+                }
+                
+                installationStatus = (isStubbed ? "Installation simulated (MVP). \(message)" : "\(summary) \(message)", .success)
+            } else {
+                installationStatus = ("Installation failed: \(message)", .error)
+            }
             
             isInstalling = false
-            isPresented = false
+            isInstallationComplete = true // Mark as complete to change button
+            
+            // Optionally, if the stubbed message is too long or requires user to check CLI,
+            // we might want a way to display it better or provide a "View Log" button.
         }
     }
 }

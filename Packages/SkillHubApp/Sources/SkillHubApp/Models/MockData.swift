@@ -64,9 +64,5 @@ struct MockData {
         )
     ]
     
-    static let activityLogs: [ActivityLog] = [
-        ActivityLog(timestamp: Date().addingTimeInterval(-300), message: "Installed Git LFS to VS Code", type: .success),
-        ActivityLog(timestamp: Date().addingTimeInterval(-3600), message: "Failed to locate Cursor config", type: .error),
-        ActivityLog(timestamp: Date().addingTimeInterval(-7200), message: "SkillHub started", type: .info)
-    ]
+
 }

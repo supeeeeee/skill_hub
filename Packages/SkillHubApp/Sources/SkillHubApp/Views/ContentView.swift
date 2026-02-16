@@ -4,7 +4,6 @@ import SkillHubCore
 enum NavigationItem: Hashable, Identifiable {
     case products
     case skills
-    case activity
     
     var id: Self { self }
 }
@@ -22,8 +21,6 @@ struct ContentView: View {
                     .tag(NavigationItem.products)
                 Label("Skills", systemImage: "wrench.and.screwdriver")
                     .tag(NavigationItem.skills)
-                Label("Activity", systemImage: "clock.arrow.circlepath")
-                    .tag(NavigationItem.activity)
             }
             .navigationTitle("SkillHub")
             .listStyle(.sidebar)
@@ -35,8 +32,6 @@ struct ContentView: View {
                         ProductsView()
                     case .skills:
                         SkillsView()
-                    case .activity:
-                        ActivityView()
                     }
                 }
                 .id(item)

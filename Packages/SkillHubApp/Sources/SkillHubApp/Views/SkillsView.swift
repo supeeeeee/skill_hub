@@ -3,57 +3,53 @@ import SkillHubCore
 
 struct SkillsView: View {
     @EnvironmentObject var viewModel: SkillHubViewModel
-    @State private var setupSkill: InstalledSkillRecord?
     @State private var isImporting = false
-    @State private var showAddOptions = false
+    @State private var showRegisterOptions = false
     @State private var showURLInput = false
     @State private var showGitInput = false
     @State private var remoteURL = ""
     @State private var gitURL = ""
-    @State private var selectedProductForNavigation: Product?
     
+    // Improved Grid Layout
     let columns = [
-        GridItem(.adaptive(minimum: 300, maximum: 500), spacing: 16)
+        GridItem(.adaptive(minimum: 340, maximum: 600), spacing: 24)
     ]
     
     var body: some View {
         Group {
             if viewModel.isLoading && viewModel.skills.isEmpty {
-                VStack {
-                    Spacer()
-                    ProgressView("Loading...")
-                    Spacer()
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .scaleEffect(1.2)
+                    Text("Loading Skills...")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if viewModel.skills.isEmpty {
                 EmptyStateView(
                     title: "No Skills Installed",
-                    message: "You haven't installed any skills yet.",
-                    iconName: "wrench.and.screwdriver",
-                    action: { showAddOptions = true },
-                    actionLabel: "Add Skill"
+                    message: "Register skills to extend your development tools.",
+                    iconName: "square.grid.2x2",
+                    action: { showRegisterOptions = true },
+                    actionLabel: "Register New Skill"
                 )
             } else {
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 16) {
+                    LazyVGrid(columns: columns, spacing: 24) {
                         ForEach(viewModel.skills) { skill in
                             NavigationLink(destination: SkillDetailView(skill: skill)) {
-                                SkillCardView(skill: skill) {
-                                    setupSkill = skill
-                                } onNavigateToProduct: { productID in
-                                    if let product = viewModel.products.first(where: { $0.id == productID }) {
-                                        selectedProductForNavigation = product
-                                    }
-                                }
+                                SkillCardView(skill: skill)
                             }
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding()
+                    .padding(24)
                 }
+                .background(Color(nsColor: .windowBackgroundColor)) // Ensure consistent background
             }
         }
-        .navigationTitle("Skills")
+        .navigationTitle("Skills Library")
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 Button(action: {
@@ -62,54 +58,44 @@ struct SkillsView: View {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
                 .disabled(viewModel.isLoading)
+                .help("Refresh skills list")
             }
             
             ToolbarItem(placement: .primaryAction) {
-                Button(action: { showAddOptions = true }) {
-                    Label("Add Skill", systemImage: "plus")
+                Button(action: { showRegisterOptions = true }) {
+                    Label("Register Skill", systemImage: "plus")
                 }
+                .help("Add a new skill")
             }
         }
-        .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
             viewModel.loadData()
         }
-        .sheet(item: $setupSkill) { skill in
-            ApplySkillView(skill: skill, isPresented: Binding(
-                get: { setupSkill != nil },
-                set: { if !$0 { setupSkill = nil } }
-            ))
-        }
-        .sheet(item: $selectedProductForNavigation) { product in
-            NavigationStack {
-                ProductDetailView(product: product)
-            }
-        }
-        .sheet(isPresented: $showAddOptions) {
-            AddSkillOptionsView(
+        .sheet(isPresented: $showRegisterOptions) {
+            RegisterSkillOptionsView(
                 onLocalFile: {
-                    showAddOptions = false
+                    showRegisterOptions = false
                     isImporting = true
                 },
                 onFromURL: {
-                    showAddOptions = false
+                    showRegisterOptions = false
                     showURLInput = true
                 },
                 onFromGit: {
-                    showAddOptions = false
+                    showRegisterOptions = false
                     showGitInput = true
                 }
             )
         }
         .sheet(isPresented: $showURLInput) {
             RemoteInputView(
-                title: "Add from URL",
+                title: "Register from URL",
                 placeholder: "https://example.com/skill.json",
-                buttonLabel: "Add",
+                buttonLabel: "Register",
                 input: $remoteURL,
                 onSubmit: {
                     if URL(string: remoteURL) != nil, remoteURL.hasPrefix("http") {
-                        viewModel.addSkill(from: remoteURL)
+                        viewModel.registerSkill(from: remoteURL)
                     }
                     showURLInput = false
                     remoteURL = ""
@@ -122,13 +108,13 @@ struct SkillsView: View {
         }
         .sheet(isPresented: $showGitInput) {
             RemoteInputView(
-                title: "Add from GitHub",
+                title: "Register from GitHub",
                 placeholder: "git@github.com:user/skill.git",
-                buttonLabel: "Clone & Add",
+                buttonLabel: "Clone & Register",
                 input: $gitURL,
                 onSubmit: {
                     if !gitURL.isEmpty {
-                        viewModel.addSkill(from: gitURL)
+                        viewModel.registerSkill(from: gitURL)
                     }
                     showGitInput = false
                     gitURL = ""
@@ -155,97 +141,114 @@ struct SkillsView: View {
     }
 }
 
-struct AddSkillOptionsView: View {
+struct RegisterSkillOptionsView: View {
     let onLocalFile: () -> Void
     let onFromURL: () -> Void
     let onFromGit: () -> Void
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Add Skill")
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            VStack(spacing: 12) {
-                Button(action: {
-                    dismiss()
-                    onLocalFile()
-                }) {
-                    HStack {
-                        Image(systemName: "folder")
-                            .frame(width: 30)
-                        VStack(alignment: .leading) {
-                            Text("Local File")
-                            Text("Select a manifest.json from your device")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
-                    .background(Color(nsColor: .controlBackgroundColor))
-                    .cornerRadius(8)
-                }
-                .buttonStyle(.plain)
-                
-                Button(action: {
-                    dismiss()
-                    onFromURL()
-                }) {
-                    HStack {
-                        Image(systemName: "link")
-                            .frame(width: 30)
-                        VStack(alignment: .leading) {
-                            Text("From URL")
-                            Text("Download manifest from a direct URL")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
-                    .background(Color(nsColor: .controlBackgroundColor))
-                    .cornerRadius(8)
-                }
-                .buttonStyle(.plain)
-                
-                Button(action: {
-                    dismiss()
-                    onFromGit()
-                }) {
-                    HStack {
-                        Image(systemName: "chevron.left.forwardslash.chevron.right")
-                            .frame(width: 30)
-                        VStack(alignment: .leading) {
-                            Text("From GitHub")
-                            Text("Clone from a Git repository")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
-                    .background(Color(nsColor: .controlBackgroundColor))
-                    .cornerRadius(8)
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Register Skill")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                Spacer()
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                        .font(.title3)
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal)
+            .padding(20)
+            .background(Color(nsColor: .windowBackgroundColor))
             
-            Button("Cancel") {
-                dismiss()
+            Divider()
+            
+            // Options List
+            VStack(spacing: 16) {
+                RegisterOptionButton(
+                    title: "Local File",
+                    subtitle: "Select a manifest.json from your device",
+                    iconName: "doc.text",
+                    color: .blue,
+                    action: onLocalFile
+                )
+                
+                RegisterOptionButton(
+                    title: "From URL",
+                    subtitle: "Download manifest from a direct URL",
+                    iconName: "link",
+                    color: .purple,
+                    action: onFromURL
+                )
+                
+                RegisterOptionButton(
+                    title: "From GitHub",
+                    subtitle: "Clone from a Git repository",
+                    iconName: "chevron.left.forwardslash.chevron.right",
+                    color: .orange,
+                    action: onFromGit
+                )
             }
-            .buttonStyle(.bordered)
+            .padding(24)
         }
-        .padding()
-        .frame(width: 400)
+        .frame(width: 420)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+struct RegisterOptionButton: View {
+    let title: String
+    let subtitle: String
+    let iconName: String
+    let color: Color
+    let action: () -> Void
+    
+    @State private var isHovered = false
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(color.opacity(0.1))
+                        .frame(width: 44, height: 44)
+                    
+                    Image(systemName: iconName)
+                        .font(.title3)
+                        .foregroundColor(color)
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary.opacity(0.5))
+            }
+            .padding(12)
+            .background(isHovered ? Color.secondary.opacity(0.05) : Color(nsColor: .controlBackgroundColor))
+            .cornerRadius(10)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color.secondary.opacity(0.1), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }
 

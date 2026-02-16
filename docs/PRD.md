@@ -37,7 +37,7 @@ People using multiple AI agent products repeatedly re-create and re-install the 
 ## User Stories
 
 1. As a user, I can list supported products and check whether each adapter is available.
-2. As a user, I can add a skill by pointing to a `skill.json` manifest.
+2. As a user, I can register a skill by pointing to a `skill.json` manifest.
 3. As a user, I can install a skill into a product with `symlink`, `copy`, or `config-patch`.
 4. As a user, I can enable or disable a skill for a specific product.
 5. As a user, I can query status to understand what is installed and enabled.
@@ -57,7 +57,7 @@ People using multiple AI agent products repeatedly re-create and re-install the 
 
 - **Skills**
   - Main catalog of registered skills with status snapshot.
-  - Entry point to add new skills and drill into details.
+  - Entry point to register new skills and drill into details.
 
 - **Skill Detail**
   - Per-skill operations: install, enable, disable, remove, inspect history.
@@ -118,11 +118,11 @@ People using multiple AI agent products repeatedly re-create and re-install the 
   - Enabled product count
   - Last updated timestamp
 - **CTAs:**
-  - `Add skill`
+  - `Register skill`
   - `Refresh catalog`
   - `Open skill`
 - **Empty states:**
-  - No skills registered: "No skills yet. Add one by pointing to a valid `skill.json` manifest."
+  - No skills registered: "No skills yet. Register one by pointing to a valid `skill.json` manifest."
 
 #### 4) Skill Detail
 
@@ -193,7 +193,7 @@ People using multiple AI agent products repeatedly re-create and re-install the 
 
 1. Open **Onboarding / Doctor** and run checks.
 2. Resolve blockers using guided fixes until at least one product is available.
-3. Open **Skills** and add a skill from `skill.json`.
+3. Open **Skills** and register a skill from `skill.json`.
 4. Enter **Skill Detail**, choose product(s), and start `Install`.
 5. Confirm action in **Apply Modal** and complete install.
 6. Enable skill where applicable and verify outcome in **Activity**.
@@ -219,7 +219,7 @@ People using multiple AI agent products repeatedly re-create and re-install the 
 Examples:
 
 - **Error:** "Install failed for `cursor` because adapter path is missing. Set adapter override in Settings, then run install again."
-- **Error:** "Could not parse `skill.json` at `/path/to/skill.json`. Fix JSON syntax and retry `Add skill`."
+- **Error:** "Could not parse `skill.json` at `/path/to/skill.json`. Fix JSON syntax and retry `Register skill`."
 - **Success:** "Installed `daily-standup` to `opencode` using `symlink`. Skill is now available to enable."
 - **Success:** "Enabled `release-checklist` for `claude-desktop`. Last updated just now."
 
@@ -278,7 +278,7 @@ Examples:
   - Grid/list of `ProductCard` components.
   - Inline warnings for unavailable adapters.
 - **Skills**
-  - Header card: catalog totals, `Add skill`, `Refresh catalog`.
+  - Header card: catalog totals, `Register skill`, `Refresh catalog`.
   - Search/filter bar card.
   - Responsive list/grid of `SkillCard` components.
 - **Skill Detail**
@@ -336,6 +336,7 @@ Transition expectations:
 - `notDetected -> detected` via successful doctor/recheck.
 - `detected -> staged` after selecting mode/targets and preparing apply action.
 - `staged -> installed` after successful apply/install.
+- `staged -> installed` after successful apply/install.
 - `installed -> enabled` after successful enable.
 - `enabled -> installed` after disable.
 - Any failure keeps current stable state and surfaces error in `InlineLog` + `StatusBadge(Error)`.
@@ -361,7 +362,7 @@ Global error behavior:
 2. Persist skill catalog and enablement state locally.
 3. Expose adapter protocol to install/enable/disable in product-specific way.
 4. Provide product enumeration with environment validation status.
-5. Support idempotent skill registration (`add` updates existing skill by ID).
+5. Support idempotent skill registration (`register` updates existing skill by ID).
 6. Record install mode used for each skill-product pairing.
 
 ## Non-Functional Requirements
