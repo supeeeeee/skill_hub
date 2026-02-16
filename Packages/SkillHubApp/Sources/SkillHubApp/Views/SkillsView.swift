@@ -108,7 +108,7 @@ struct SkillsView: View {
                 buttonLabel: "Add",
                 input: $remoteURL,
                 onSubmit: {
-                    if let url = URL(string: remoteURL), remoteURL.hasPrefix("http") {
+                    if URL(string: remoteURL) != nil, remoteURL.hasPrefix("http") {
                         viewModel.addSkill(from: remoteURL)
                     }
                     showURLInput = false
