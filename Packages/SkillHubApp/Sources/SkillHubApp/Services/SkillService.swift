@@ -132,6 +132,8 @@ final class SkillService {
         let fm = FileManager.default
 
         var sourceFolder: URL?
+        var manifestFile: URL?
+
         if let contents = try? fm.contentsOfDirectory(at: rootURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
             for folderURL in contents {
                 let candidates = [
@@ -144,6 +146,7 @@ final class SkillService {
                        let found = try? JSONDecoder().decode(SkillManifest.self, from: data),
                        found.id == manifest.id {
                         sourceFolder = folderURL
+                        manifestFile = fileURL
                         break
                     }
                 }
@@ -154,26 +157,32 @@ final class SkillService {
             }
         }
 
-        guard let source = sourceFolder else {
+        guard let source = sourceFolder, let manifestPath = manifestFile else {
             throw SkillHubError.invalidManifest("Could not find source folder for skill \(manifest.id) in \(skillsPath)")
+        }
+
+        // Use CLI to stage the skill (robust copy and store update)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [findSkillHubCLI(), "stage", manifestPath.path]
+        process.standardOutput = FileHandle.standardOutput
+        process.standardError = FileHandle.standardError
+
+        try process.run()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            throw SkillHubError.invalidManifest("Failed to stage skill (exit code: \(process.terminationStatus))")
         }
 
         let hubSkillsDir = SkillHubPaths.defaultSkillsDirectory()
         let destination = hubSkillsDir.appendingPathComponent(manifest.id)
 
-        try FileSystemUtils.ensureDirectoryExists(at: hubSkillsDir)
-        try FileSystemUtils.copyItem(from: source, to: destination)
+        // Perform the takeover (backup original, replace with symlink)
         _ = try FileSystemUtils.backupIfExists(at: source, productID: productID, skillID: manifest.id)
         try FileSystemUtils.createSymlink(from: destination, to: source)
 
-        let destManifestPath: String
-        if fm.fileExists(atPath: destination.appendingPathComponent("skill.json").path) {
-            destManifestPath = destination.appendingPathComponent("skill.json").path
-        } else {
-            destManifestPath = destination.appendingPathComponent("manifest.json").path
-        }
-
-        try skillStore.upsertSkill(manifest: manifest, manifestPath: destManifestPath)
+        // Update installation status
         try skillStore.markInstalled(skillID: manifest.id, productID: productID, installMode: .symlink)
         try skillStore.setEnabled(skillID: manifest.id, productID: productID, enabled: true)
     }

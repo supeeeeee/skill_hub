@@ -290,10 +290,15 @@ struct ProductDetailView: View {
                     // Detected Local Skills
                     if hasUnregistered {
                         SectionHeader(title: "Detected Local Skills", icon: "sparkles", color: .purple)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)], spacing: 16) {
-                            ForEach(unregistered, id: \.id) { manifest in
-                                UnregisteredSkillCard(manifest: manifest, product: product)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 16) {
+                                ForEach(unregistered, id: \.id) { manifest in
+                                    UnregisteredSkillCard(manifest: manifest, product: product)
+                                        .frame(width: 260)
+                                }
                             }
+                            .padding(.horizontal, 4)
+                            .padding(.bottom, 8)
                         }
                     }
 
@@ -567,42 +572,79 @@ struct UnregisteredSkillCard: View {
     @State private var isHovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                // Icon
                 Image(systemName: "sparkles")
-                    .font(.title2)
-                    .foregroundColor(.purple)
-                    .frame(width: 40, height: 40)
-                    .background(Circle().fill(Color.purple.opacity(0.1)))
+                    .font(.title3)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.purple, .blue],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 32, height: 32)
+                    .background(
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                            .shadow(color: .purple.opacity(0.2), radius: 4, x: 0, y: 2)
+                    )
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(manifest.name)
                         .font(.headline)
                         .lineLimit(1)
                     Text("Found locally")
-                        .font(.caption)
+                        .font(.caption2)
                         .foregroundColor(.secondary)
                 }
                 Spacer()
             }
             
+            Text(manifest.summary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
             Spacer()
 
-            Button("Acquire") {
+            Button(action: {
                 Task { await viewModel.acquireSkill(manifest: manifest, fromProduct: product.id) }
+            }) {
+                HStack {
+                    Text("Acquire")
+                    Image(systemName: "arrow.right.circle.fill")
+                }
+                .fontWeight(.medium)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
             }
             .buttonStyle(.borderedProminent)
             .tint(.purple)
             .controlSize(.small)
-            .frame(maxWidth: .infinity)
+            .clipShape(Capsule())
+            .shadow(color: .purple.opacity(0.3), radius: 4, x: 0, y: 2)
         }
-        .padding(16)
-        .frame(height: 140)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(12)
-        .shadow(color: isHovering ? Color.black.opacity(0.1) : Color.black.opacity(0.05), radius: isHovering ? 8 : 4, x: 0, y: isHovering ? 4 : 2)
+        .padding(12)
+        .frame(height: 150)
+        .background(.ultraThinMaterial)
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [.purple.opacity(0.3), .clear],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
+        .shadow(color: isHovering ? Color.black.opacity(0.15) : Color.black.opacity(0.05), radius: isHovering ? 12 : 6, x: 0, y: isHovering ? 6 : 3)
         .scaleEffect(isHovering ? 1.02 : 1.0)
-        .animation(.spring(response: 0.3), value: isHovering)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovering)
         .onHover { hovering in
             isHovering = hovering
         }
