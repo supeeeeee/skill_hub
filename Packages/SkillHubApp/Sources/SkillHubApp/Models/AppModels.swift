@@ -11,7 +11,6 @@ struct Product: Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     let iconName: String
-    var iconURL: URL? = nil
     let description: String
     let status: ProductStatus
     var health: HealthStatus = .unknown

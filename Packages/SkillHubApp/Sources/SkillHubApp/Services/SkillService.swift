@@ -29,7 +29,6 @@ final class SkillService {
                 id: adapter.id,
                 name: adapter.name,
                 iconName: iconName(for: adapter.id),
-                iconURL: iconURL(for: adapter.id),
                 description: detection.reason,
                 status: status,
                 health: .unknown,
@@ -38,23 +37,6 @@ final class SkillService {
                 customConfigPath: state.productConfigFilePathOverrides[adapter.id]
             )
         }
-    }
-
-    private func iconURL(for id: String) -> URL? {
-        let urlString: String?
-        switch id {
-        case "cursor": urlString = "https://avatars.githubusercontent.com/u/126763044?s=400&v=4"
-        case "claude-code": urlString = "https://avatars.githubusercontent.com/u/7904489?s=400&v=4"
-        case "opencode": urlString = "https://avatars.githubusercontent.com/u/10821636?s=400&v=4"
-        case "codex": urlString = "https://avatars.githubusercontent.com/u/14957082?s=400&v=4"
-        case "openclaw": urlString = "https://avatars.githubusercontent.com/u/9919?s=200&v=4" // GitHub logo as placeholder
-        default: urlString = nil
-        }
-        
-        if let str = urlString {
-            return URL(string: str)
-        }
-        return nil
     }
 
     func setProductConfigPath(productID: String, rawPath: String) throws {
