@@ -56,18 +56,7 @@ final class SkillService {
     }
 
     func registerSkill(from source: String) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [findSkillHubCLI(), "add", source]
-        process.standardOutput = FileHandle.standardOutput
-        process.standardError = FileHandle.standardError
-
-        try process.run()
-        process.waitUntilExit()
-
-        guard process.terminationStatus == 0 else {
-            throw SkillHubError.invalidManifest("Failed to register skill (exit code: \(process.terminationStatus))")
-        }
+        try runSkillHub(arguments: ["add", source], action: "register skill")
     }
 
     func installSkill(
@@ -129,7 +118,7 @@ final class SkillService {
 
     func acquireSkill(manifest: SkillManifest, fromProduct productID: String, skillsPath: String) throws {
         let rootURL = URL(fileURLWithPath: skillsPath)
-        let fm = FileManager.default
+        let fm = Foundation.FileManager.default
 
         var sourceFolder: URL?
         var manifestFile: URL?
@@ -162,21 +151,13 @@ final class SkillService {
         }
 
         // Use CLI to stage the skill (robust copy and store update)
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [findSkillHubCLI(), "stage", manifestPath.path]
-        process.standardOutput = FileHandle.standardOutput
-        process.standardError = FileHandle.standardError
-
-        try process.run()
-        process.waitUntilExit()
-
-        guard process.terminationStatus == 0 else {
-            throw SkillHubError.invalidManifest("Failed to stage skill (exit code: \(process.terminationStatus))")
-        }
+        try runSkillHub(arguments: ["stage", manifestPath.path], action: "stage skill")
 
         let hubSkillsDir = SkillHubPaths.defaultSkillsDirectory()
         let destination = hubSkillsDir.appendingPathComponent(manifest.id)
+        guard fm.fileExists(atPath: destination.path) else {
+            throw SkillHubError.invalidManifest("Staged skill directory missing after stage command: \(destination.path)")
+        }
 
         // Perform the takeover (backup original, replace with symlink)
         _ = try FileSystemUtils.backupIfExists(at: source, productID: productID, skillID: manifest.id)
@@ -210,22 +191,79 @@ final class SkillService {
         }
     }
 
-    private func findSkillHubCLI() -> String {
-        let paths = [
+    private func runSkillHub(arguments: [String], action: String) throws {
+        let cliPath = try findSkillHubCLI()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: cliPath)
+        process.arguments = arguments
+        process.standardOutput = FileHandle.standardOutput
+        process.standardError = FileHandle.standardError
+
+        try process.run()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            throw SkillHubError.invalidManifest(
+                "Failed to \(action) (exit code: \(process.terminationStatus), cli: \(cliPath))"
+            )
+        }
+    }
+
+    private func findSkillHubCLI() throws -> String {
+        let fm = Foundation.FileManager.default
+        let cwd = fm.currentDirectoryPath
+        var paths = [
             "/usr/local/bin/skillhub",
             "/opt/homebrew/bin/skillhub",
             "~/.local/bin/skillhub",
-            "./.build/debug/skillhub"
+            "skillhub"
         ]
+
+        if let executableURL = Bundle.main.executableURL {
+            let executableDir = executableURL.deletingLastPathComponent().path
+            paths.append("\(executableDir)/skillhub")
+            paths.append("\(executableDir)/../skillhub")
+        }
+
+        paths.append(contentsOf: [
+            "\(cwd)/.build/debug/skillhub",
+            "\(cwd)/.build/arm64-apple-macosx/debug/skillhub",
+            "\(cwd)/Packages/SkillHubCLI/.build/debug/skillhub",
+            "\(cwd)/Packages/SkillHubCLI/.build/arm64-apple-macosx/debug/skillhub"
+        ])
 
         for path in paths {
             let expanded = (path as NSString).expandingTildeInPath
-            if FileManager.default.fileExists(atPath: expanded) {
+            if expanded == "skillhub" {
+                if let resolved = resolveFromPATH(binary: expanded) {
+                    return resolved
+                }
+                continue
+            }
+
+            if fm.isExecutableFile(atPath: expanded) {
                 return expanded
             }
         }
 
-        return "skillhub"
+        throw SkillHubError.invalidManifest(
+            "Could not locate executable 'skillhub'. Build SkillHubCLI first or add it to PATH."
+        )
+    }
+
+    private func resolveFromPATH(binary: String) -> String? {
+        let fm = Foundation.FileManager.default
+        let pathVariable = ProcessInfo.processInfo.environment["PATH"] ?? ""
+        let components = pathVariable.split(separator: ":").map(String.init)
+
+        for component in components where !component.isEmpty {
+            let candidate = URL(fileURLWithPath: component).appendingPathComponent(binary).path
+            if fm.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
+        }
+
+        return nil
     }
 
     private static func makeDefaultAdapterRegistry() -> AdapterRegistry {
