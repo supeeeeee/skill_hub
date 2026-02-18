@@ -26,6 +26,7 @@ public protocol ProductAdapter {
     var id: String { get }
     var name: String { get }
     var supportedInstallModes: [InstallMode] { get }
+    func skillsDirectory() -> URL
 
     func detect() -> ProductDetectionResult
     func install(skill: SkillManifest, mode: InstallMode) throws -> InstallMode

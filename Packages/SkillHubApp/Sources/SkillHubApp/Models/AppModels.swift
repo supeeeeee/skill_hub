@@ -7,19 +7,6 @@ enum ProductStatus: String, CaseIterable, Sendable {
     case error
 }
 
-enum HealthStatus: String, CaseIterable, Sendable {
-    case healthy
-    case warning
-    case unknown
-}
-
-struct DiagnosticIssue: Identifiable, Sendable {
-    let id: String // Product ID
-    let message: String
-    let isFixable: Bool
-    let fixActionLabel: String?
-}
-
 struct Product: Identifiable, Hashable, Sendable {
     let id: String
     let name: String

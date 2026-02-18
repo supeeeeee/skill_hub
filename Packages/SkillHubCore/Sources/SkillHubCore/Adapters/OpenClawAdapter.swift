@@ -16,8 +16,12 @@ public struct OpenClawAdapter: ProductAdapter {
         return home.appendingPathComponent(".openclaw", isDirectory: true)
     }
 
-    private var openClawSkillsDirectory: URL {
+    private var defaultOpenClawSkillsDirectory: URL {
         openClawRoot.appendingPathComponent("skills", isDirectory: true)
+    }
+
+    public func skillsDirectory() -> URL {
+        SkillHubConfig.overrideSkillsDirectory(for: id) ?? defaultOpenClawSkillsDirectory
     }
 
     public func detect() -> ProductDetectionResult {
@@ -42,18 +46,18 @@ public struct OpenClawAdapter: ProductAdapter {
             throw SkillHubError.invalidManifest("Skill not staged in \(skillInstallPath.path)")
         }
 
-        try FileSystemUtils.ensureDirectoryExists(at: openClawSkillsDirectory)
+        try FileSystemUtils.ensureDirectoryExists(at: skillsDirectory())
         return resolvedMode
     }
 
     public func enable(skillID: String, mode: InstallMode) throws {
         let source = skillStoreRoot.appendingPathComponent(skillID, isDirectory: true)
-        let destination = openClawSkillsDirectory.appendingPathComponent(skillID, isDirectory: true)
+        let destination = skillsDirectory().appendingPathComponent(skillID, isDirectory: true)
         guard FileManager.default.fileExists(atPath: source.path) else {
             throw SkillHubError.invalidManifest("Skill not staged in \(source.path)")
         }
 
-        try FileSystemUtils.ensureDirectoryExists(at: openClawSkillsDirectory)
+        try FileSystemUtils.ensureDirectoryExists(at: skillsDirectory())
 
         let resolvedMode = try resolveInstallMode(mode)
         _ = try FileSystemUtils.backupIfExists(at: destination, productID: id, skillID: skillID)
@@ -66,12 +70,12 @@ public struct OpenClawAdapter: ProductAdapter {
         case .auto, .configPatch:
             throw SkillHubError.unsupportedInstallMode("\(resolvedMode.rawValue) for \(id) enable")
         default:
-            fatalError("Unknown install mode: \(resolvedMode)")
+            throw SkillHubError.unsupportedInstallMode("unknown install mode: \(resolvedMode.rawValue)")
         }
     }
 
     public func disable(skillID: String) throws {
-        let destination = openClawSkillsDirectory.appendingPathComponent(skillID, isDirectory: true)
+        let destination = skillsDirectory().appendingPathComponent(skillID, isDirectory: true)
         if FileManager.default.fileExists(atPath: destination.path) {
             try FileManager.default.removeItem(at: destination)
         }
@@ -79,7 +83,7 @@ public struct OpenClawAdapter: ProductAdapter {
 
     public func status(skillID: String) -> ProductSkillStatus {
         let skillInstallPath = skillStoreRoot.appendingPathComponent(skillID, isDirectory: true)
-        let enabledPath = openClawSkillsDirectory.appendingPathComponent(skillID, isDirectory: true)
+        let enabledPath = skillsDirectory().appendingPathComponent(skillID, isDirectory: true)
         let isInstalled = FileManager.default.fileExists(atPath: skillInstallPath.path)
         let isEnabled = FileManager.default.fileExists(atPath: enabledPath.path)
 

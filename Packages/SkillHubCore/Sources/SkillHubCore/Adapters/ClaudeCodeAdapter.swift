@@ -28,6 +28,10 @@ public struct ClaudeCodeAdapter: ProductAdapter {
         return claudeCodeConfigRoot.appendingPathComponent("skills", isDirectory: true)
     }
 
+    public func skillsDirectory() -> URL {
+        claudeCodeSkillsDirectory
+    }
+
     /// Claude Code settings: ~/.claude/settings.json
     private var claudeCodeSettingsJSON: URL {
         claudeCodeConfigRoot.appendingPathComponent("settings.json", isDirectory: false)
@@ -106,7 +110,7 @@ public struct ClaudeCodeAdapter: ProductAdapter {
         case .auto:
             throw SkillHubError.unsupportedInstallMode("auto mode requires resolution before enable")
         default:
-            fatalError("Unknown install mode: \(resolvedMode)")
+            throw SkillHubError.unsupportedInstallMode("unknown install mode: \(resolvedMode.rawValue)")
         }
     }
 
@@ -163,19 +167,9 @@ public struct ClaudeCodeAdapter: ProductAdapter {
 
     /// Patch Claude Code's settings.json by adding to `skillhub.skills`.
     private func patchClaudeCodeSettings(skillID: String, skillPath: String) throws {
-        var root: [String: Any] = [:]
-
-        // Load existing settings if present
-        if FileManager.default.fileExists(atPath: claudeCodeSettingsJSON.path),
-           let data = try? Data(contentsOf: claudeCodeSettingsJSON),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        {
-            root = json
-        }
-
-        // Add skillhub namespace with skills array
-        var skillhub = root["skillhub"] as? [String: Any] ?? [:]
-        var skills = skillhub["skills"] as? [String] ?? []
+        try ConfigPatchValidation.validateSkillPath(skillPath, productID: id)
+        var root = try ConfigPatchValidation.loadRootObjectIfExists(at: claudeCodeSettingsJSON, productID: id)
+        var (skillhub, skills) = try ConfigPatchValidation.extractSkillhubSection(from: root, productID: id)
 
         // Add skill path if not already present
         if !skills.contains(skillPath) {
@@ -193,8 +187,7 @@ public struct ClaudeCodeAdapter: ProductAdapter {
     /// Remove skill from settings.json
     private func unpatchClaudeCodeSettings(skillID: String) throws {
         guard FileManager.default.fileExists(atPath: claudeCodeSettingsJSON.path),
-              let data = try? Data(contentsOf: claudeCodeSettingsJSON),
-              var root = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
+              var root = try? ConfigPatchValidation.loadRootObjectIfExists(at: claudeCodeSettingsJSON, productID: id)
         else {
             return
         }

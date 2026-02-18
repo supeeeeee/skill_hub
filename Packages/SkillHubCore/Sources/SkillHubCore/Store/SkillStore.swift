@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 public protocol SkillStore {
     func loadState() throws -> SkillHubState
@@ -43,16 +44,50 @@ public final class JSONSkillStore: SkillStore {
     public func saveState(_ state: SkillHubState) throws {
         let directory = stateFileURL.deletingLastPathComponent()
         try FileSystemUtils.ensureDirectoryExists(at: directory)
-
-        let tempURL = stateFileURL.appendingPathExtension("tmp")
         let payload = try encoder.encode(state)
-        try payload.write(to: tempURL, options: .atomic)
 
-        let fm = FileManager.default
-        if fm.fileExists(atPath: stateFileURL.path) {
-            try fm.removeItem(at: stateFileURL)
+        try withStateFileLock {
+            let fm = FileManager.default
+            let tempURL = directory
+                .appendingPathComponent(".\(stateFileURL.lastPathComponent).tmp.\(UUID().uuidString)", isDirectory: false)
+
+            do {
+                try payload.write(to: tempURL, options: [])
+
+                if fm.fileExists(atPath: stateFileURL.path) {
+                    _ = try fm.replaceItemAt(stateFileURL, withItemAt: tempURL)
+                } else {
+                    try fm.moveItem(at: tempURL, to: stateFileURL)
+                }
+            } catch {
+                if fm.fileExists(atPath: tempURL.path) {
+                    try? fm.removeItem(at: tempURL)
+                }
+                throw error
+            }
         }
-        try fm.moveItem(at: tempURL, to: stateFileURL)
+    }
+
+    private func withStateFileLock<T>(_ body: () throws -> T) throws -> T {
+        let lockURL = stateFileURL.appendingPathExtension("lock")
+        let fd = open(lockURL.path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+        guard fd >= 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+
+        defer {
+            _ = close(fd)
+        }
+
+        guard flock(fd, LOCK_EX) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+
+        defer {
+            _ = flock(fd, LOCK_UN)
+        }
+
+        return try body()
     }
 
     public func upsertSkill(manifest: SkillManifest, manifestPath: String) throws {

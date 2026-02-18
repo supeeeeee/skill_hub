@@ -53,6 +53,10 @@ public struct CursorAdapter: ProductAdapter {
         return cursorDotSkillsDirectory
     }
 
+    public func skillsDirectory() -> URL {
+        resolvedCursorSkillsDirectory()
+    }
+
     // MARK: - ProductAdapter
 
     public func detect() -> ProductDetectionResult {
@@ -79,7 +83,7 @@ public struct CursorAdapter: ProductAdapter {
             throw SkillHubError.invalidManifest("Skill not staged in \(stagedSkillPath.path)")
         }
 
-        let skillsDirectory = resolvedCursorSkillsDirectory()
+        let skillsDirectory = skillsDirectory()
         // Ensure skills directory exists
         try FileSystemUtils.ensureDirectoryExists(at: skillsDirectory)
 
@@ -99,7 +103,7 @@ public struct CursorAdapter: ProductAdapter {
             throw SkillHubError.invalidManifest("Skill not staged in \(source.path)")
         }
 
-        let skillsDirectory = resolvedCursorSkillsDirectory()
+        let skillsDirectory = skillsDirectory()
 
         // Ensure directories exist
         try FileSystemUtils.ensureDirectoryExists(at: skillsDirectory)
@@ -125,13 +129,13 @@ public struct CursorAdapter: ProductAdapter {
         case .auto:
             throw SkillHubError.unsupportedInstallMode("auto mode requires resolution before enable")
         default:
-            fatalError("Unknown install mode: \(resolvedMode)")
+            throw SkillHubError.unsupportedInstallMode("unknown install mode: \(resolvedMode.rawValue)")
         }
     }
 
     /// Disable removes the skill from Cursor's skills directory and unregisters from settings.
     public func disable(skillID: String) throws {
-        let destination = resolvedCursorSkillsDirectory().appendingPathComponent(skillID, isDirectory: true)
+        let destination = skillsDirectory().appendingPathComponent(skillID, isDirectory: true)
 
         // Remove skill files/directory
         if FileManager.default.fileExists(atPath: destination.path) {
@@ -145,7 +149,7 @@ public struct CursorAdapter: ProductAdapter {
     /// Status reports the current state of the skill for this product.
     public func status(skillID: String) -> ProductSkillStatus {
         let staged = skillStoreRoot.appendingPathComponent(skillID, isDirectory: true)
-        let enabled = resolvedCursorSkillsDirectory().appendingPathComponent(skillID, isDirectory: true)
+        let enabled = skillsDirectory().appendingPathComponent(skillID, isDirectory: true)
 
         let isInstalled = FileManager.default.fileExists(atPath: staged.path)
         let existsAtDestination = FileManager.default.fileExists(atPath: enabled.path)
@@ -182,19 +186,9 @@ public struct CursorAdapter: ProductAdapter {
 
     /// Patch Cursor's settings.json by adding to `skillhub.skills`.
     private func patchCursorSettings(skillID: String, skillPath: String) throws {
-        var root: [String: Any] = [:]
-
-        // Load existing settings if present
-        if FileManager.default.fileExists(atPath: cursorSettingsJSON.path),
-           let data = try? Data(contentsOf: cursorSettingsJSON),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        {
-            root = json
-        }
-
-        // Add skillhub namespace with skills array
-        var skillhub = root["skillhub"] as? [String: Any] ?? [:]
-        var skills = skillhub["skills"] as? [String] ?? []
+        try ConfigPatchValidation.validateSkillPath(skillPath, productID: id)
+        var root = try ConfigPatchValidation.loadRootObjectIfExists(at: cursorSettingsJSON, productID: id)
+        var (skillhub, skills) = try ConfigPatchValidation.extractSkillhubSection(from: root, productID: id)
 
         // Add skill path if not already present
         if !skills.contains(skillPath) {
@@ -213,8 +207,7 @@ public struct CursorAdapter: ProductAdapter {
     /// Remove skill from settings.json
     private func unpatchCursorSettings(skillID: String) throws {
         guard FileManager.default.fileExists(atPath: cursorSettingsJSON.path),
-              let data = try? Data(contentsOf: cursorSettingsJSON),
-              var root = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
+              var root = try? ConfigPatchValidation.loadRootObjectIfExists(at: cursorSettingsJSON, productID: id)
         else {
             return
         }

@@ -110,7 +110,7 @@ struct ProductDetailView: View {
                         Spacer()
 
                         Button(action: {
-                            editingPath = product.customSkillsPath ?? defaultSkillsPath(for: product.id)
+                            editingPath = resolvedSkillsPath(for: product.id)
                             showPathEditor = true
                         }) {
                             Label("Edit", systemImage: "pencil")
@@ -122,7 +122,7 @@ struct ProductDetailView: View {
                     HStack {
                         Image(systemName: "folder.fill")
                             .foregroundColor(.secondary)
-                        Text(product.customSkillsPath ?? defaultSkillsPath(for: product.id))
+                        Text(resolvedSkillsPath(for: product.id))
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .lineLimit(1)
@@ -178,7 +178,7 @@ struct ProductDetailView: View {
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.leading)
                             
-                            if issue.isFixable, let label = issue.fixActionLabel {
+                            if issue.isFixable, let label = issue.suggestion?.label {
                                 Button(action: {
                                     Task {
                                         await viewModel.fixIssue(for: product.id)
@@ -335,22 +335,18 @@ struct ProductDetailView: View {
         }
     }
 
-    private func defaultSkillsPath(for productID: String) -> String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        switch productID {
-        case "openclaw": return "\(home)/.openclaw/skills"
-        case "opencode": return "\(home)/.config/opencode/skills"
-        case "codex": return "\(home)/.codex/skills"
-        case "cursor": return "\(home)/.cursor/skills"
-        case "claude-code": return "\(home)/.claude/skills"
-        default: return "\(home)/.skillhub/products/\(productID)/skills"
+    private func resolvedSkillsPath(for productID: String) -> String {
+        guard let adapter = try? viewModel.adapterRegistry.adapter(for: productID) else {
+            return "Unavailable"
         }
+        return adapter.skillsDirectory().path
     }
 
     private func healthIcon(for status: HealthStatus) -> String {
         switch status {
         case .healthy: return "checkmark.shield.fill"
         case .warning: return "exclamationmark.shield.fill"
+        case .error: return "xmark.shield.fill"
         case .unknown: return "shield.slash"
         }
     }
@@ -359,6 +355,7 @@ struct ProductDetailView: View {
         switch status {
         case .healthy: return .green
         case .warning: return .orange
+        case .error: return .red
         case .unknown: return .secondary
         }
     }

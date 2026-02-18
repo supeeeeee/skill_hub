@@ -30,7 +30,7 @@ public enum InstallMode: String, Codable, CaseIterable, Sendable {
     }
 }
 
-public struct AdapterConfig: Codable, Equatable {
+public struct AdapterConfig: Codable, Equatable, Sendable {
     public let productID: String
     public let installMode: InstallMode
     public let targetPath: String?
@@ -49,7 +49,7 @@ public struct AdapterConfig: Codable, Equatable {
     }
 }
 
-public struct SkillManifest: Codable, Equatable {
+public struct SkillManifest: Codable, Equatable, Sendable {
     public let id: String
     public let name: String
     public let version: String
@@ -77,7 +77,7 @@ public struct SkillManifest: Codable, Equatable {
     }
 }
 
-public struct InstalledSkillRecord: Codable, Equatable, Identifiable {
+public struct InstalledSkillRecord: Codable, Equatable, Identifiable, Sendable {
     public var id: String { manifest.id }
     public var manifest: SkillManifest
     public var manifestPath: String

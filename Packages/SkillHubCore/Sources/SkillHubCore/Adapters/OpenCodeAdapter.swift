@@ -27,6 +27,10 @@ public struct OpenCodeAdapter: ProductAdapter {
         return openCodeConfigRoot.appendingPathComponent("skills", isDirectory: true)
     }
 
+    public func skillsDirectory() -> URL {
+        openCodeSkillsDirectory
+    }
+
     /// OpenCode main config: ~/.config/opencode/config.json
     private var openCodeConfigJSON: URL {
         openCodeConfigRoot.appendingPathComponent("config.json", isDirectory: false)
@@ -113,7 +117,7 @@ public struct OpenCodeAdapter: ProductAdapter {
         case .auto:
             throw SkillHubError.unsupportedInstallMode("auto mode requires resolution before enable")
         default:
-            fatalError("Unknown install mode: \(resolvedMode)")
+            throw SkillHubError.unsupportedInstallMode("unknown install mode: \(resolvedMode.rawValue)")
         }
     }
 
@@ -171,19 +175,9 @@ public struct OpenCodeAdapter: ProductAdapter {
     /// Patch `~/.config/opencode/config.json` by adding to `skillhub.skills`.
     /// This is intentionally namespaced to avoid depending on OpenCode's upstream config schema.
     private func patchOpenCodeConfig(skillID: String, skillPath: String) throws {
-        var root: [String: Any] = [:]
-
-        // Load existing config if present
-        if FileManager.default.fileExists(atPath: openCodeConfigJSON.path),
-           let data = try? Data(contentsOf: openCodeConfigJSON),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        {
-            root = json
-        }
-
-        // Add skillhub namespace with skills array
-        var skillhub = root["skillhub"] as? [String: Any] ?? [:]
-        var skills = skillhub["skills"] as? [String] ?? []
+        try ConfigPatchValidation.validateSkillPath(skillPath, productID: id)
+        var root = try ConfigPatchValidation.loadRootObjectIfExists(at: openCodeConfigJSON, productID: id)
+        var (skillhub, skills) = try ConfigPatchValidation.extractSkillhubSection(from: root, productID: id)
 
         // Add skill path if not already present
         if !skills.contains(skillPath) {
@@ -201,8 +195,7 @@ public struct OpenCodeAdapter: ProductAdapter {
     /// Remove skill from config.json
     private func unpatchOpenCodeConfig(skillID: String) throws {
         guard FileManager.default.fileExists(atPath: openCodeConfigJSON.path),
-              let data = try? Data(contentsOf: openCodeConfigJSON),
-              var root = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
+              var root = try? ConfigPatchValidation.loadRootObjectIfExists(at: openCodeConfigJSON, productID: id)
         else {
             return
         }
