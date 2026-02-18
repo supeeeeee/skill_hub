@@ -132,15 +132,50 @@ struct ProductDetailView: View {
                     )
                     .shadow(color: Color.accentColor.opacity(0.1), radius: 8, x: 0, y: 4)
                 
-                Image(systemName: product.iconName)
-                    .font(.system(size: 40))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color.accentColor, Color.accentColor.opacity(0.7)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                Group {
+                    if let url = product.iconURL {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .empty:
+                                ProgressView()
+                            case .success(let image):
+                                image.resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .padding(12) // Add some padding for the icon inside the background
+                            case .failure:
+                                Image(systemName: product.iconName)
+                                    .font(.system(size: 40))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [Color.accentColor, Color.accentColor.opacity(0.7)],
+                                            startPoint: .top,
+                                            endPoint: .bottom
+                                        )
+                                    )
+                            @unknown default:
+                                Image(systemName: product.iconName)
+                                    .font(.system(size: 40))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [Color.accentColor, Color.accentColor.opacity(0.7)],
+                                            startPoint: .top,
+                                            endPoint: .bottom
+                                        )
+                                    )
+                            }
+                        }
+                    } else {
+                        Image(systemName: product.iconName)
+                            .font(.system(size: 40))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.accentColor, Color.accentColor.opacity(0.7)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                    }
+                }
             }
             .frame(width: 72, height: 72)
 

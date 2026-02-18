@@ -8,12 +8,36 @@ struct ProductCardView: View {
     
     var body: some View {
         HStack {
-            Image(systemName: product.iconName)
-                .font(.system(size: 24))
-                .foregroundColor(.secondary)
-                .frame(width: 48, height: 48)
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(8)
+            Group {
+                if let url = product.iconURL {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .empty:
+                            ProgressView()
+                                .controlSize(.small)
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                        case .failure:
+                            Image(systemName: product.iconName)
+                                .font(.system(size: 24))
+                                .foregroundColor(.secondary)
+                        @unknown default:
+                            Image(systemName: product.iconName)
+                                .font(.system(size: 24))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                } else {
+                    Image(systemName: product.iconName)
+                        .font(.system(size: 24))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .frame(width: 48, height: 48)
+            .background(Color.gray.opacity(0.1))
+            .cornerRadius(8)
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(product.name)

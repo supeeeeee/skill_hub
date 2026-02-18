@@ -13,9 +13,34 @@ struct InstalledProductRowView: View {
                     .fill(Color.secondary.opacity(0.1))
                     .frame(width: 40, height: 40)
                 
-                Image(systemName: product.iconName)
-                    .font(.system(size: 20))
-                    .foregroundColor(.accentColor)
+                Group {
+                    if let url = product.iconURL {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .empty:
+                                ProgressView()
+                                    .controlSize(.small)
+                            case .success(let image):
+                                image.resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .clipShape(Circle())
+                            case .failure:
+                                Image(systemName: product.iconName)
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.accentColor)
+                            @unknown default:
+                                Image(systemName: product.iconName)
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.accentColor)
+                            }
+                        }
+                    } else {
+                        Image(systemName: product.iconName)
+                            .font(.system(size: 20))
+                            .foregroundColor(.accentColor)
+                    }
+                }
+                .frame(width: 32, height: 32)
             }
             
             VStack(alignment: .leading, spacing: 2) {
