@@ -305,7 +305,7 @@ struct ProductDetailView: View {
                     // Active Skills
                     if !activeSkills.isEmpty {
                         SectionHeader(title: "Installed & Active", icon: "checkmark.circle.fill", color: .green)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)], spacing: 16) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 16)], spacing: 16) {
                             ForEach(activeSkills) { skill in
                                 SkillCard(
                                     product: product,
@@ -320,7 +320,7 @@ struct ProductDetailView: View {
                     // Library Skills
                     if !librarySkills.isEmpty {
                         SectionHeader(title: "Available from Library", icon: "books.vertical.fill", color: .primary)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)], spacing: 16) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 16)], spacing: 16) {
                             ForEach(librarySkills) { skill in
                                 SkillCard(
                                     product: product,
@@ -482,6 +482,8 @@ struct SkillCard: View {
     let onSetup: () -> Void
     @EnvironmentObject var viewModel: SkillHubViewModel
     @State private var isHovering = false
+    @State private var isDeleting = false
+    @State private var isToggling = false
 
     private var isInstalled: Bool {
         skill.installedProducts.contains(product.id)
@@ -496,71 +498,168 @@ struct SkillCard: View {
         if !isInstalled { return "Available to install" }
         return isEnabled ? "Enabled" : "Disabled"
     }
+    
+    // Modern status colors
+    private var statusColor: Color {
+        if !isInstalled { return .secondary }
+        return isEnabled ? .green : .orange
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                Image(systemName: isInstalled ? "checkmark.circle.fill" : "arrow.down.circle")
+        HStack(spacing: 12) {
+            // 1. Icon & Status Indicator
+            ZStack(alignment: .bottomTrailing) {
+                Image(systemName: "cube.box.fill") // Placeholder icon
                     .font(.title2)
-                    .foregroundColor(isInstalled ? (isEnabled ? .green : .secondary) : .accentColor)
-                    .frame(width: 40, height: 40)
-                    .background(
-                        Circle()
-                            .fill(isInstalled ? (isEnabled ? Color.green.opacity(0.1) : Color.secondary.opacity(0.1)) : Color.accentColor.opacity(0.1))
+                    .foregroundStyle(
+                        isInstalled
+                            ? (isEnabled
+                               ? AnyShapeStyle(LinearGradient(colors: [.green, .mint], startPoint: .topLeading, endPoint: .bottomTrailing))
+                               : AnyShapeStyle(LinearGradient(colors: [.orange.opacity(0.8), .orange], startPoint: .topLeading, endPoint: .bottomTrailing)))
+                            : AnyShapeStyle(LinearGradient(colors: [.secondary, .gray], startPoint: .topLeading, endPoint: .bottomTrailing))
                     )
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(skill.manifest.name)
-                        .font(.headline)
-                        .lineLimit(1)
+                    .frame(width: 44, height: 44)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color(nsColor: .controlBackgroundColor))
+                            .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+                    )
+                    .overlay(
+                         RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Color.primary.opacity(0.05), lineWidth: 1)
+                    )
+                
+                if isInstalled {
+                    Circle()
+                        .fill(isEnabled ? Color.green : Color.orange)
+                        .frame(width: 10, height: 10)
+                        .overlay(Circle().stroke(Color(nsColor: .controlBackgroundColor), lineWidth: 2))
+                        .offset(x: 2, y: 2)
+                        .shadow(color: (isEnabled ? Color.green : Color.orange).opacity(0.3), radius: 2, x: 0, y: 1)
+                }
+            }
+            
+            // 2. Info
+            VStack(alignment: .leading, spacing: 3) {
+                Text(skill.manifest.name)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                
+                HStack(spacing: 6) {
+                    Text("v\(skill.manifest.version)")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Color.secondary.opacity(0.1))
+                        .cornerRadius(4)
                     
                     Text(statusDetail)
-                        .font(.caption)
-                        .foregroundColor(isEnabled ? .primary : .secondary)
+                        .font(.caption2)
+                        .foregroundColor(statusColor)
                 }
-                
-                Spacer()
             }
             
             Spacer()
             
-            HStack {
+            // 3. Actions (Compact & Modern)
+            HStack(spacing: 8) {
                 if !productDetected {
-                    Button("Run Doctor") {}
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(true)
+                     // No actions
                 } else if !isInstalled {
-                    Button("Install") { onSetup() }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .frame(maxWidth: .infinity)
-                } else if !isEnabled {
-                    Button("Enable") {
-                        Task { await viewModel.setSkillEnabled(manifest: skill.manifest, productID: product.id, enabled: true) }
+                    Button(action: onSetup) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.accentColor)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .frame(maxWidth: .infinity)
+                    .buttonStyle(.plain)
+                    .help("Install Skill")
                 } else {
-                    Button("Disable") {
-                        Task { await viewModel.setSkillEnabled(manifest: skill.manifest, productID: product.id, enabled: false) }
+                    // Actions visible on hover or always visible but subtle
+                    if isHovering {
+                        // Toggle Status
+                        Button(action: {
+                            withAnimation(.spring()) { isToggling = true }
+                            Task {
+                                await viewModel.setSkillEnabled(manifest: skill.manifest, productID: product.id, enabled: !isEnabled)
+                                isToggling = false
+                            }
+                        }) {
+                            ZStack {
+                                if isToggling {
+                                    ProgressView()
+                                        .controlSize(.mini)
+                                } else {
+                                    Image(systemName: isEnabled ? "power.circle.fill" : "power.circle")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(isEnabled ? .green : .secondary)
+                                }
+                            }
+                            .frame(width: 28, height: 28)
+                            .background(isEnabled ? Color.green.opacity(0.1) : Color.secondary.opacity(0.1))
+                            .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help(isEnabled ? "Disable Skill" : "Enable Skill")
+                        .disabled(isToggling)
+                        .transition(.scale.combined(with: .opacity))
+                        
+                        // Remove
+                        Button(action: {
+                            withAnimation(.spring()) { isDeleting = true }
+                            Task {
+                                await viewModel.uninstallSkill(manifest: skill.manifest, productID: product.id)
+                                // No need to set isDeleting = false as card will disappear
+                            }
+                        }) {
+                            ZStack {
+                                if isDeleting {
+                                    ProgressView()
+                                        .controlSize(.mini)
+                                } else {
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.red.opacity(0.8))
+                                }
+                            }
+                            .frame(width: 28, height: 28)
+                            .background(Color.red.opacity(0.1))
+                            .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Uninstall Skill")
+                        .disabled(isDeleting)
+                        .transition(.scale.combined(with: .opacity))
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .frame(maxWidth: .infinity)
                 }
             }
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovering)
         }
-        .padding(16)
-        .frame(height: 140)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(12)
-        .shadow(color: isHovering ? Color.black.opacity(0.1) : Color.black.opacity(0.05), radius: isHovering ? 8 : 4, x: 0, y: isHovering ? 4 : 2)
+        .padding(12)
+        .frame(height: 80) // Compact fixed height
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+                .shadow(
+                    color: isHovering ? Color.black.opacity(0.1) : Color.black.opacity(0.04),
+                    radius: isHovering ? 12 : 4,
+                    x: 0,
+                    y: isHovering ? 6 : 2
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(
+                    isHovering ? Color.accentColor.opacity(0.3) : Color.primary.opacity(0.05),
+                    lineWidth: isHovering ? 1 : 0.5
+                )
+        )
         .scaleEffect(isHovering ? 1.02 : 1.0)
-        .animation(.spring(response: 0.3), value: isHovering)
         .onHover { hovering in
-            isHovering = hovering
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                isHovering = hovering
+            }
         }
     }
 }
