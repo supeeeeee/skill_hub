@@ -28,7 +28,8 @@ public struct CursorAdapter: ProductAdapter {
 
     /// Cursor settings JSON: ~/Library/Application Support/Cursor/User/settings.json
     private var cursorSettingsJSON: URL {
-        cursorAppSupportRoot.appendingPathComponent("User/settings.json", isDirectory: false)
+        if let override = ProductPathOverrides.configFilePathOverride(for: id) { return override }
+        return cursorAppSupportRoot.appendingPathComponent("User/settings.json", isDirectory: false)
     }
 
     /// Skills directory under ~/.cursor/skills/ (legacy / lightweight installs)
@@ -55,6 +56,10 @@ public struct CursorAdapter: ProductAdapter {
 
     public func skillsDirectory() -> URL {
         resolvedCursorSkillsDirectory()
+    }
+
+    public func configFilePath() -> URL? {
+        cursorSettingsJSON
     }
 
     // MARK: - ProductAdapter

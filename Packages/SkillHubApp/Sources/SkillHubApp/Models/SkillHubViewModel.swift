@@ -238,4 +238,19 @@ class SkillHubViewModel: ObservableObject {
             log("Failed to check updates for \(productID): \(error.localizedDescription)", type: .error)
         }
     }
+
+    func setProductConfigPath(productID: String, path: String) {
+        do {
+            try skillService.setProductConfigPath(productID: productID, rawPath: path)
+            loadData()
+            let normalized = path.trimmingCharacters(in: .whitespacesAndNewlines)
+            if normalized.isEmpty {
+                log("Reset config path for \(productID) to default", type: .success)
+            } else {
+                log("Updated config path for \(productID)", type: .success)
+            }
+        } catch {
+            log("Failed to update config path: \(error.localizedDescription)", type: .error)
+        }
+    }
 }

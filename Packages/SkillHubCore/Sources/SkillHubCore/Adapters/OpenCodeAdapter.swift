@@ -33,7 +33,12 @@ public struct OpenCodeAdapter: ProductAdapter {
 
     /// OpenCode main config: ~/.config/opencode/config.json
     private var openCodeConfigJSON: URL {
-        openCodeConfigRoot.appendingPathComponent("config.json", isDirectory: false)
+        if let override = ProductPathOverrides.configFilePathOverride(for: id) { return override }
+        return openCodeConfigRoot.appendingPathComponent("config.json", isDirectory: false)
+    }
+
+    public func configFilePath() -> URL? {
+        openCodeConfigJSON
     }
 
     /// OpenCode plugins config: ~/.config/opencode/opencode.json

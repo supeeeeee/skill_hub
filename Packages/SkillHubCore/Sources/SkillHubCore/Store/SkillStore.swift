@@ -5,6 +5,7 @@ public protocol SkillStore {
     func loadState() throws -> SkillHubState
     func saveState(_ state: SkillHubState) throws
     func upsertSkill(manifest: SkillManifest, manifestPath: String) throws
+    func setProductConfigPath(productID: String, configPath: String?) throws
     func setEnabled(skillID: String, productID: String, enabled: Bool) throws
     func markInstalled(skillID: String, productID: String, installMode: InstallMode) throws
     func markUninstalled(skillID: String, productID: String) throws
@@ -116,6 +117,20 @@ public final class JSONSkillStore: SkillStore {
         }
 
         state.skills[index].hasUpdate = hasUpdate
+        state.updatedAt = Date()
+        try saveState(state)
+    }
+
+    public func setProductConfigPath(productID: String, configPath: String?) throws {
+        var state = try loadState()
+
+        let normalized = configPath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if normalized.isEmpty {
+            state.productConfigFilePathOverrides.removeValue(forKey: productID)
+        } else {
+            state.productConfigFilePathOverrides[productID] = normalized
+        }
+
         state.updatedAt = Date()
         try saveState(state)
     }

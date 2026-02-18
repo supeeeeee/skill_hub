@@ -9,6 +9,12 @@ struct ProductDetailView: View {
     @State private var productDetection: ProductDetectionResult?
     @State private var showPathEditor = false
     @State private var editingPath = ""
+    @State private var showConfigPathEditor = false
+    @State private var editingConfigPath = ""
+
+    private var currentProduct: Product {
+        viewModel.products.first(where: { $0.id == product.id }) ?? product
+    }
 
     var activeSkills: [InstalledSkillRecord] {
         viewModel.skills.filter { skill in
@@ -132,6 +138,50 @@ struct ProductDetailView: View {
                     .padding(12)
                     .background(Color(nsColor: .controlBackgroundColor))
                     .cornerRadius(8)
+                }
+
+                if let configPath = resolvedConfigPath(for: product.id) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Label("Config Path", systemImage: "doc.text")
+                                .font(.headline)
+
+                            if currentProduct.customConfigPath != nil {
+                                Text("Custom")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.accentColor.opacity(0.12))
+                                    .cornerRadius(10)
+                            }
+
+                            Spacer()
+
+                            Button(action: {
+                                editingConfigPath = currentProduct.customConfigPath ?? configPath
+                                showConfigPathEditor = true
+                            }) {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+
+                        HStack {
+                            Image(systemName: "doc.text.fill")
+                                .foregroundColor(.secondary)
+                            Text(configPath)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer()
+                        }
+                        .padding(12)
+                        .background(Color(nsColor: .controlBackgroundColor))
+                        .cornerRadius(8)
+                    }
                 }
 
                 Divider()
@@ -333,6 +383,16 @@ struct ProductDetailView: View {
                 }
             )
         }
+        .sheet(isPresented: $showConfigPathEditor) {
+            CustomConfigPathEditorSheet(
+                productName: product.name,
+                currentPath: editingConfigPath,
+                isPresented: $showConfigPathEditor,
+                onSave: { newPath in
+                    viewModel.setProductConfigPath(productID: product.id, path: newPath)
+                }
+            )
+        }
     }
 
     private func resolvedSkillsPath(for productID: String) -> String {
@@ -340,6 +400,13 @@ struct ProductDetailView: View {
             return "Unavailable"
         }
         return adapter.skillsDirectory().path
+    }
+
+    private func resolvedConfigPath(for productID: String) -> String? {
+        guard let adapter = try? viewModel.adapterRegistry.adapter(for: productID) else {
+            return nil
+        }
+        return adapter.configFilePath()?.path
     }
 
     private func healthIcon(for status: HealthStatus) -> String {
@@ -540,6 +607,104 @@ struct CustomPathEditorSheet: View {
                     .foregroundColor(.secondary)
 
                 TextField("Enter custom path or leave empty for default", text: $customPath)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: customPath) { newValue in
+                        showError = !newValue.isEmpty && !newValue.hasPrefix("/")
+                    }
+
+                if showError {
+                    Text("Path must be an absolute path (start with /)")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+
+                Button(action: { customPath = "" }) {
+                    Label("Use Default Path", systemImage: "arrow.counterclockwise")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Will use:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(customPath.isEmpty ? currentPath : customPath)
+                    .font(.caption)
+                    .foregroundColor(customPath.isEmpty ? .orange : .primary)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.secondary.opacity(0.1))
+                    .cornerRadius(6)
+            }
+
+            Spacer()
+
+            HStack {
+                Button("Cancel") {
+                    isPresented = false
+                }
+                .buttonStyle(.bordered)
+
+                Spacer()
+
+                Button("Save") {
+                    onSave(customPath)
+                    isPresented = false
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(showError)
+            }
+        }
+        .padding(20)
+        .frame(width: 450, height: 350)
+        .onAppear {
+            customPath = currentPath
+        }
+    }
+}
+
+struct CustomConfigPathEditorSheet: View {
+    let productName: String
+    let currentPath: String
+    @Binding var isPresented: Bool
+    let onSave: (String) -> Void
+
+    @State private var customPath: String = ""
+    @State private var showError = false
+
+    var body: some View {
+        VStack(spacing: 20) {
+            HStack {
+                Text("Edit Config Path")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Spacer()
+                Button(action: { isPresented = false }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            HStack {
+                Image(systemName: "app.badge")
+                    .font(.title2)
+                    .foregroundColor(.accentColor)
+                Text(productName)
+                    .font(.headline)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Custom Config File")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                TextField("Enter custom config file path or leave empty for default", text: $customPath)
                     .textFieldStyle(.roundedBorder)
                     .onChange(of: customPath) { newValue in
                         showError = !newValue.isEmpty && !newValue.hasPrefix("/")

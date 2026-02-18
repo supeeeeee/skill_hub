@@ -109,16 +109,42 @@ public struct InstalledSkillRecord: Codable, Equatable, Identifiable, Sendable {
 public struct SkillHubState: Codable, Equatable {
     public var schemaVersion: Int
     public var skills: [InstalledSkillRecord]
+    public var productConfigFilePathOverrides: [String: String]
     public var updatedAt: Date
 
     public init(
         schemaVersion: Int = 1,
         skills: [InstalledSkillRecord] = [],
+        productConfigFilePathOverrides: [String: String] = [:],
         updatedAt: Date = Date()
     ) {
         self.schemaVersion = schemaVersion
         self.skills = skills
+        self.productConfigFilePathOverrides = productConfigFilePathOverrides
         self.updatedAt = updatedAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case skills
+        case productConfigFilePathOverrides
+        case updatedAt
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        self.skills = try container.decode([InstalledSkillRecord].self, forKey: .skills)
+        self.productConfigFilePathOverrides = try container.decodeIfPresent([String: String].self, forKey: .productConfigFilePathOverrides) ?? [:]
+        self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.schemaVersion, forKey: .schemaVersion)
+        try container.encode(self.skills, forKey: .skills)
+        try container.encode(self.productConfigFilePathOverrides, forKey: .productConfigFilePathOverrides)
+        try container.encode(self.updatedAt, forKey: .updatedAt)
     }
 }
 

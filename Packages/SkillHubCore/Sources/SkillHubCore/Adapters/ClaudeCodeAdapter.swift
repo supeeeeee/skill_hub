@@ -34,7 +34,12 @@ public struct ClaudeCodeAdapter: ProductAdapter {
 
     /// Claude Code settings: ~/.claude/settings.json
     private var claudeCodeSettingsJSON: URL {
-        claudeCodeConfigRoot.appendingPathComponent("settings.json", isDirectory: false)
+        if let override = ProductPathOverrides.configFilePathOverride(for: id) { return override }
+        return claudeCodeConfigRoot.appendingPathComponent("settings.json", isDirectory: false)
+    }
+
+    public func configFilePath() -> URL? {
+        claudeCodeSettingsJSON
     }
 
     /// Claude Code configuration: ~/.claude.json (alternative config location)

@@ -27,6 +27,7 @@ public protocol ProductAdapter {
     var name: String { get }
     var supportedInstallModes: [InstallMode] { get }
     func skillsDirectory() -> URL
+    func configFilePath() -> URL?
 
     func detect() -> ProductDetectionResult
     func install(skill: SkillManifest, mode: InstallMode) throws -> InstallMode
@@ -36,6 +37,10 @@ public protocol ProductAdapter {
 }
 
 public extension ProductAdapter {
+    func configFilePath() -> URL? {
+        nil
+    }
+
     func resolveInstallMode(_ mode: InstallMode) throws -> InstallMode {
         if mode != .auto {
             guard supportedInstallModes.contains(mode) else {

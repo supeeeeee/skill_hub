@@ -19,6 +19,7 @@ final class SkillService {
 
     func loadProducts() -> [Product] {
         let cfg = SkillHubConfig.load()
+        let state = (try? skillStore.loadState()) ?? SkillHubState()
 
         return adapterRegistry.all().map { adapter in
             let detection = adapter.detect()
@@ -32,9 +33,19 @@ final class SkillService {
                 status: status,
                 health: .unknown,
                 supportedModes: adapter.supportedInstallModes,
-                customSkillsPath: cfg.productSkillsDirectoryOverrides[adapter.id]
+                customSkillsPath: cfg.productSkillsDirectoryOverrides[adapter.id],
+                customConfigPath: state.productConfigFilePathOverrides[adapter.id]
             )
         }
+    }
+
+    func setProductConfigPath(productID: String, rawPath: String) throws {
+        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty && !trimmed.hasPrefix("/") {
+            throw SkillHubError.invalidManifest("Config path must be an absolute path")
+        }
+
+        try skillStore.setProductConfigPath(productID: productID, configPath: trimmed.isEmpty ? nil : trimmed)
     }
 
     func importSkill(at url: URL) throws -> SkillManifest {
