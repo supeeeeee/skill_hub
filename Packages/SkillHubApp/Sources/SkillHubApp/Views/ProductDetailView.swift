@@ -19,14 +19,19 @@ struct ProductDetailView: View {
 
     var activeSkills: [InstalledSkillRecord] {
         viewModel.skills.filter { skill in
-            matchesSearch(skill) && skill.installedProducts.contains(product.id)
+            skill.installedProducts.contains(product.id)
         }
     }
 
-    var librarySkills: [InstalledSkillRecord] {
-        viewModel.skills.filter { skill in
-            matchesSearch(skill) && !skill.installedProducts.contains(product.id)
-        }
+    var projectSkills: [InstalledSkillRecord] {
+        viewModel.skills.filter { matchesSearch($0) }
+            .sorted { s1, s2 in
+                let p1 = s1.installedProducts.contains(product.id)
+                let p2 = s2.installedProducts.contains(product.id)
+                if p1 && !p2 { return true }
+                if !p1 && p2 { return false }
+                return s1.manifest.name < s2.manifest.name
+            }
     }
 
     private func matchesSearch(_ skill: InstalledSkillRecord) -> Bool {
@@ -259,10 +264,24 @@ struct ProductDetailView: View {
 
     private var skillsDirectorySection: some View {
         VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                Text("Skills Management")
-                    .font(.title3)
-                    .fontWeight(.semibold)
+            HStack(alignment: .firstTextBaseline) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("Skills Management")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                    
+                    let activeCount = activeSkills.count
+                    let totalCount = viewModel.skills.count
+                    
+                    Text("\(activeCount) Active / \(totalCount) Total")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.secondary.opacity(0.1))
+                        .cornerRadius(8)
+                }
                 
                 Spacer()
                 
@@ -283,7 +302,7 @@ struct ProductDetailView: View {
 
             if viewModel.skills.isEmpty && !hasUnregistered {
                 emptyStateView(message: "No skills found in library.")
-            } else if activeSkills.isEmpty && librarySkills.isEmpty && !hasUnregistered {
+            } else if projectSkills.isEmpty && !hasUnregistered {
                 emptyStateView(message: "No matching skills found.")
             } else {
                 LazyVStack(spacing: 32) {
@@ -302,26 +321,10 @@ struct ProductDetailView: View {
                         }
                     }
 
-                    // Active Skills
-                    if !activeSkills.isEmpty {
-                        SectionHeader(title: "Installed & Active", icon: "checkmark.circle.fill", color: .green)
+                    // Merged Skills List
+                    if !projectSkills.isEmpty {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 16)], spacing: 16) {
-                            ForEach(activeSkills) { skill in
-                                SkillCard(
-                                    product: product,
-                                    skill: skill,
-                                    productDetected: productDetection?.isDetected ?? false,
-                                    onSetup: { setupSkill = skill }
-                                )
-                            }
-                        }
-                    }
-
-                    // Library Skills
-                    if !librarySkills.isEmpty {
-                        SectionHeader(title: "Available from Library", icon: "books.vertical.fill", color: .primary)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 16)], spacing: 16) {
-                            ForEach(librarySkills) { skill in
+                            ForEach(projectSkills) { skill in
                                 SkillCard(
                                     product: product,
                                     skill: skill,
