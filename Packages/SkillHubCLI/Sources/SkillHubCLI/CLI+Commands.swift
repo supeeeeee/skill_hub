@@ -453,14 +453,54 @@ extension CLI {
     }
 
     private func stageSkillInStore(skillID: String, sourceDirectory: URL) throws -> URL {
-        guard FileManager.default.fileExists(atPath: sourceDirectory.path) else {
+        let fileManager = FileManager.default
+
+        guard fileManager.fileExists(atPath: sourceDirectory.path) else {
             throw SkillHubError.invalidManifest("Skill source directory missing: \(sourceDirectory.path)")
         }
 
         let skillStoreRoot = SkillHubPaths.defaultSkillsDirectory()
         try FileSystemUtils.ensureDirectoryExists(at: skillStoreRoot)
         let destination = skillStoreRoot.appendingPathComponent(skillID, isDirectory: true)
-        try FileSystemUtils.copyItem(from: sourceDirectory, to: destination)
+
+        let tempDestination = skillStoreRoot.appendingPathComponent(".\(skillID).staging-\(UUID().uuidString)", isDirectory: true)
+        let backupURL = skillStoreRoot.appendingPathComponent(".\(skillID).backup-\(UUID().uuidString)", isDirectory: true)
+
+        var shouldCleanupTemp = true
+        defer {
+            if shouldCleanupTemp, fileManager.fileExists(atPath: tempDestination.path) {
+                try? fileManager.removeItem(at: tempDestination)
+            }
+        }
+
+        try fileManager.copyItem(at: sourceDirectory, to: tempDestination)
+
+        var hadExistingDestination = false
+        do {
+            try fileManager.moveItem(at: destination, to: backupURL)
+            hadExistingDestination = true
+        } catch let error as NSError {
+            if !(error.domain == NSCocoaErrorDomain && error.code == NSFileNoSuchFileError) {
+                throw error
+            }
+        }
+
+        do {
+            try fileManager.moveItem(at: tempDestination, to: destination)
+            shouldCleanupTemp = false
+            if hadExistingDestination, fileManager.fileExists(atPath: backupURL.path) {
+                try? fileManager.removeItem(at: backupURL)
+            }
+        } catch {
+            if hadExistingDestination,
+               fileManager.fileExists(atPath: backupURL.path),
+               !fileManager.fileExists(atPath: destination.path)
+            {
+                try? fileManager.moveItem(at: backupURL, to: destination)
+            }
+            throw error
+        }
+
         return destination
     }
 
