@@ -26,7 +26,7 @@ public enum InstallMode: String, Codable, CaseIterable, Sendable {
 
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.singleValueContainer()
-        try container.encode(rawValue)
+        try container.encode(self.rawValue)
     }
 }
 
