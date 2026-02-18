@@ -6,7 +6,6 @@ import SkillHubCore
 class SkillHubViewModel: ObservableObject {
     @Published var products: [Product] = []
     @Published var skills: [InstalledSkillRecord] = []
-    @Published var discoverySkills: [DiscoverySkill] = []
     @Published var unregisteredSkillsByProduct: [String: [SkillManifest]] = [:]
     @Published var healthResults: [String: DiagnosticIssue] = [:]
     @Published var toasts: [Toast] = []
@@ -26,17 +25,7 @@ class SkillHubViewModel: ObservableObject {
         self.skillService = skillService
         self.scanService = scanService ?? ScanService(adapterRegistry: skillService.adapterRegistry)
 
-        loadDiscoveryCatalog()
         loadData()
-    }
-
-    func loadDiscoveryCatalog() {
-        do {
-            discoverySkills = try DiscoveryCatalog.loadBundled()
-        } catch {
-            discoverySkills = []
-            log("Failed to load discover catalog: \(error.localizedDescription)", type: .error)
-        }
     }
     
     func loadData() {
@@ -114,7 +103,7 @@ class SkillHubViewModel: ObservableObject {
         let isStubbed = true // This is true for MVP as per README.md
 
         do {
-            log("Starting deployment of \(manifest.name) for \(productID)...", type: .info)
+            log("Starting installation of \(manifest.name) for \(productID)...", type: .info)
 
             try skillService.installSkill(
                 manifest: manifest,
@@ -123,7 +112,7 @@ class SkillHubViewModel: ObservableObject {
                 currentSkills: skills
             )
 
-            let successMsg = "Successfully deployed and enabled \(manifest.name) for \(productID)"
+            let successMsg = "Successfully installed and enabled \(manifest.name) for \(productID)"
             log(successMsg, type: .success)
 
             // Refresh data
@@ -132,7 +121,7 @@ class SkillHubViewModel: ObservableObject {
             return (true, successMsg, isStubbed)
 
         } catch {
-            let errorMsg = "Error deploying \(manifest.name): \(error.localizedDescription)"
+            let errorMsg = "Error installing \(manifest.name): \(error.localizedDescription)"
             log(errorMsg, type: .error)
             return (false, errorMsg, isStubbed)
         }
@@ -243,7 +232,7 @@ class SkillHubViewModel: ObservableObject {
                 log("Found update for \(skillName).", type: .success)
                 loadData()
             } else {
-                log("No deployed skills to check for \(productID).", type: .info)
+                log("No installed skills to check for \(productID).", type: .info)
             }
         } catch {
             log("Failed to check updates for \(productID): \(error.localizedDescription)", type: .error)

@@ -4,12 +4,8 @@ import Darwin
 public protocol SkillStore {
     func loadState() throws -> SkillHubState
     func saveState(_ state: SkillHubState) throws
-    @available(*, deprecated, message: "Use addSkill")
     func upsertSkill(manifest: SkillManifest, manifestPath: String) throws
-    func addSkill(manifest: SkillManifest, manifestPath: String) throws
     func setEnabled(skillID: String, productID: String, enabled: Bool) throws
-    func markDeployed(skillID: String, productID: String, deployMode: InstallMode) throws
-    @available(*, deprecated, message: "Use markDeployed")
     func markInstalled(skillID: String, productID: String, installMode: InstallMode) throws
     func markUninstalled(skillID: String, productID: String) throws
     func setHasUpdate(skillID: String, hasUpdate: Bool) throws
@@ -105,17 +101,12 @@ public final class JSONSkillStore: SkillStore {
             state.skills.append(
                 InstalledSkillRecord(
                     manifest: manifest,
-                    manifestPath: manifestPath,
-                    deployedProducts: []
+                    manifestPath: manifestPath
                 )
             )
         }
 
         try saveState(state)
-    }
-
-    public func addSkill(manifest: SkillManifest, manifestPath: String) throws {
-        try upsertSkill(manifest: manifest, manifestPath: manifestPath)
     }
     
     public func setHasUpdate(skillID: String, hasUpdate: Bool) throws {
@@ -147,23 +138,19 @@ public final class JSONSkillStore: SkillStore {
         try saveState(state)
     }
 
-    public func markDeployed(skillID: String, productID: String, deployMode: InstallMode) throws {
+    public func markInstalled(skillID: String, productID: String, installMode: InstallMode) throws {
         var state = try loadState()
         guard let index = state.skills.firstIndex(where: { $0.manifest.id == skillID }) else {
             throw SkillHubError.invalidManifest("Skill not found: \(skillID)")
         }
 
-        var deployedSet = Set(state.skills[index].deployedProducts)
-        deployedSet.insert(productID)
+        var installedSet = Set(state.skills[index].installedProducts)
+        installedSet.insert(productID)
 
-        state.skills[index].deployedProducts = deployedSet.sorted()
-        state.skills[index].lastDeployModeByProduct[productID] = deployMode
+        state.skills[index].installedProducts = installedSet.sorted()
+        state.skills[index].lastInstallModeByProduct[productID] = installMode
         state.updatedAt = Date()
         try saveState(state)
-    }
-
-    public func markInstalled(skillID: String, productID: String, installMode: InstallMode) throws {
-        try markDeployed(skillID: skillID, productID: productID, deployMode: installMode)
     }
 
     public func markUninstalled(skillID: String, productID: String) throws {
@@ -172,14 +159,14 @@ public final class JSONSkillStore: SkillStore {
             throw SkillHubError.invalidManifest("Skill not found: \(skillID)")
         }
 
-        var deployedSet = Set(state.skills[index].deployedProducts)
+        var installedSet = Set(state.skills[index].installedProducts)
         var enabledSet = Set(state.skills[index].enabledProducts)
-        deployedSet.remove(productID)
+        installedSet.remove(productID)
         enabledSet.remove(productID)
 
-        state.skills[index].deployedProducts = deployedSet.sorted()
+        state.skills[index].installedProducts = installedSet.sorted()
         state.skills[index].enabledProducts = enabledSet.sorted()
-        state.skills[index].lastDeployModeByProduct.removeValue(forKey: productID)
+        state.skills[index].lastInstallModeByProduct.removeValue(forKey: productID)
         state.updatedAt = Date()
         try saveState(state)
     }

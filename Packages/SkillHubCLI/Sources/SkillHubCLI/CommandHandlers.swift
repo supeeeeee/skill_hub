@@ -34,7 +34,7 @@ struct AddCommandHandler: CLICommandHandler {
 struct StageCommandHandler: CLICommandHandler {
     let names = ["stage"]
     func execute(cli: CLI, arguments: [String], jsonOutput _: Bool) throws {
-        try cli.addFromLegacyStage(arguments: arguments)
+        try cli.stage(arguments: arguments)
     }
 }
 
@@ -45,17 +45,10 @@ struct UnstageCommandHandler: CLICommandHandler {
     }
 }
 
-struct DeployCommandHandler: CLICommandHandler {
-    let names = ["deploy"]
-    func execute(cli: CLI, arguments: [String], jsonOutput _: Bool) throws {
-        try cli.deploy(arguments: arguments)
-    }
-}
-
 struct InstallCommandHandler: CLICommandHandler {
     let names = ["install"]
     func execute(cli: CLI, arguments: [String], jsonOutput _: Bool) throws {
-        try cli.deploy(arguments: arguments, legacyAlias: true)
+        try cli.install(arguments: arguments)
     }
 }
 

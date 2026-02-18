@@ -158,7 +158,6 @@ struct CLI {
             AddCommandHandler(),
             StageCommandHandler(),
             UnstageCommandHandler(),
-            DeployCommandHandler(),
             InstallCommandHandler(),
             ApplyCommandHandler(),
             UninstallCommandHandler(),
@@ -194,22 +193,20 @@ struct CLI {
           products                        List known product adapters
           detect | doctor                 Show detection status for known products [--json]
           skills                          List registered skills
-          add <source>                    Register and prepare skill files from skill.json (local path, URL, or git repo)
-          stage <skill.json-path>         Deprecated alias for add
-          unstage <skill-id>              Remove prepared skill directory from ~/.skillhub/skills
-          deploy <skill-id> <product-id> [--mode auto|symlink|copy|configPatch]
-                                             Validate prepared skill and record deploy mode
+          add <source>                    Register or update a skill from skill.json (local path, URL, or git repo)
+          stage <skill.json-path>         Register and copy skill directory into ~/.skillhub/skills/<id>
+          unstage <skill-id>              Remove staged skill directory from ~/.skillhub/skills
           install <skill-id> <product-id> [--mode auto|symlink|copy|configPatch]
-                                             Deprecated alias for deploy
+                                             Validate staged skill and record install mode
           apply <skill.json|skill-id> <product-id> [--mode auto|symlink|copy|configPatch]
-                                            Add/prepare/deploy/enable in one command
+                                            Register/stage/install/enable in one command
           setup <skill.json|skill-id> <product-id> [--mode auto|symlink|copy|configPatch]
-                                            Add/prepare/deploy/enable in one command
+                                            Register/stage/install/enable in one command
           uninstall <skill-id> <product-id>
-                                             Disable skill and remove product deployment state
+                                             Disable skill and remove product installation state
           enable <skill-id> <product-id>  Enable a skill for a product
           disable <skill-id> <product-id> Disable a skill for a product
-          remove <skill-id> [--purge]     Remove skill state; optionally purge prepared files
+          remove <skill-id> [--purge]     Remove skill state; optionally purge staged files
           status [skill-id]               Show state for one or all skills
 
         Optional flags:

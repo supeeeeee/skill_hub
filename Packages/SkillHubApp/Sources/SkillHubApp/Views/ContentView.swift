@@ -4,18 +4,15 @@ import SkillHubCore
 enum NavigationItem: Hashable, Identifiable {
     case products
     case skills
-    case discover
     
     var id: Self { self }
 }
 
 struct ContentView: View {
     @EnvironmentObject private var viewModel: SkillHubViewModel
-    @EnvironmentObject private var preferences: UserPreferences
     @State private var selectedItem: NavigationItem? = .products
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var showCommandPalette = false
-    @State private var showSettings = false
     
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -24,8 +21,6 @@ struct ContentView: View {
                     .tag(NavigationItem.products)
                 Label("Skills", systemImage: "wrench.and.screwdriver")
                     .tag(NavigationItem.skills)
-                Label("Discover", systemImage: "safari")
-                    .tag(NavigationItem.discover)
             }
             .navigationTitle("SkillHub")
             .listStyle(.sidebar)
@@ -37,8 +32,6 @@ struct ContentView: View {
                         ProductsView()
                     case .skills:
                         SkillsView()
-                    case .discover:
-                        DiscoverView()
                     }
                 }
                 .id(item)
@@ -66,24 +59,6 @@ struct ContentView: View {
             }
             .padding()
             .frame(width: 400, height: 250)
-        }
-        .sheet(isPresented: $showSettings) {
-            SettingsView()
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .automatic) {
-                Toggle(isOn: $preferences.isAdvancedMode) {
-                    Text(preferences.isAdvancedMode ? "Pro" : "Simple")
-                }
-                .toggleStyle(.switch)
-                .help("Switch between Simple and Pro mode")
-
-                Button {
-                    showSettings = true
-                } label: {
-                    Label("Settings", systemImage: "gearshape")
-                }
-            }
         }
         .overlay(alignment: .topTrailing) {
             ToastHostView(toasts: $viewModel.toasts)

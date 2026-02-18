@@ -5,7 +5,6 @@ struct ApplySkillView: View {
     let skill: InstalledSkillRecord
     var preselectedProductID: String? = nil
     @EnvironmentObject var viewModel: SkillHubViewModel
-    @EnvironmentObject var preferences: UserPreferences
     @Binding var isPresented: Bool
     
     @State private var selectedProduct: String = ""
@@ -33,7 +32,7 @@ struct ApplySkillView: View {
     
     var body: some View {
         VStack(spacing: 20) {
-            Text("Deploy \(skill.manifest.name)")
+            Text("Install \(skill.manifest.name)")
                 .font(.title2)
                 .fontWeight(.bold)
             
@@ -66,18 +65,16 @@ struct ApplySkillView: View {
                     }
                 }
                 
-                if preferences.isAdvancedMode {
-                    DisclosureGroup("Advanced Options") {
-                        VStack(alignment: .leading) {
-                            Picker("Deploy Mode", selection: $selectedMode) {
-                                ForEach(InstallMode.allCases, id: \.self) { mode in
-                                    Text(self.friendlyModeName(mode)).tag(mode)
-                                }
+                DisclosureGroup("Advanced Options") {
+                    VStack(alignment: .leading) {
+                        Picker("Install Mode", selection: $selectedMode) {
+                            ForEach(InstallMode.allCases, id: \.self) { mode in
+                                Text(self.friendlyModeName(mode)).tag(mode)
                             }
-                            Text("Choose how the skill will be deployed.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
                         }
+                        Text("Choose how the skill will be installed.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
             }
@@ -94,7 +91,7 @@ struct ApplySkillView: View {
                 Spacer()
                 
                 if !isInstallationComplete {
-                    Button("Smart Deploy") {
+                    Button("Smart Install") {
                         install()
                     }
                     .disabled(selectedProduct.isEmpty || isInstalling)
@@ -108,7 +105,7 @@ struct ApplySkillView: View {
             }
             
             if isInstalling {
-                ProgressView("Deploying...")
+                ProgressView("Installing...")
             }
         }
         .padding()
@@ -125,7 +122,7 @@ struct ApplySkillView: View {
         case .symlink: return "Synced (Recommended)"
         case .copy: return "Standalone Copy"
         case .configPatch: return "Native Integration"
-        case .auto: return "Auto (Smart Deploy)"
+        case .auto: return "Auto (Smart Select)"
         default: return "Unknown Mode"
         }
     }
@@ -137,7 +134,7 @@ struct ApplySkillView: View {
         }
         
         isInstalling = true
-        installationStatus = ("Initiating deployment...", .info)
+        installationStatus = ("Initiating installation...", .info)
         
         Task {
             // Assume viewModel.installSkill now returns a more detailed result
@@ -152,20 +149,20 @@ struct ApplySkillView: View {
                 let summary: String
                 switch selectedMode {
                 case .symlink:
-                    summary = "Deployed in Synced mode. Changes will sync across all apps."
+                    summary = "Installed in Synced mode. Changes will sync across all apps."
                 case .copy:
-                    summary = "Deployed as Standalone Copy. Updates won't sync automatically."
+                    summary = "Installed as Standalone Copy. Updates won't sync automatically."
                 case .configPatch:
-                    summary = "Deployed via Native Integration."
+                    summary = "Installed via Native Integration."
                 case .auto:
-                    summary = "Smart Deploy complete."
+                    summary = "Smart Install complete."
                 default:
-                    summary = "Deployed successfully."
+                    summary = "Installed successfully."
                 }
-
-                installationStatus = (isStubbed ? "Deployment simulated (MVP). \(message)" : "\(summary) \(message)", .success)
+                
+                installationStatus = (isStubbed ? "Installation simulated (MVP). \(message)" : "\(summary) \(message)", .success)
             } else {
-                installationStatus = ("Deployment failed: \(message)", .error)
+                installationStatus = ("Installation failed: \(message)", .error)
             }
             
             isInstalling = false

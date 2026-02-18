@@ -45,7 +45,7 @@ struct ProductsView: View {
     }
     
     private func installedSkillsCount(for productID: String) -> Int {
-        viewModel.skills.filter { $0.deployedProducts.contains(productID) }.count
+        viewModel.skills.filter { $0.installedProducts.contains(productID) }.count
     }
     
     private func enabledSkillsCount(for productID: String) -> Int {
