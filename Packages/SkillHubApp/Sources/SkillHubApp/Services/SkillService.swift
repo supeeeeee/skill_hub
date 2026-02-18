@@ -117,14 +117,32 @@ final class SkillService {
     }
 
     func acquireSkill(manifest: SkillManifest, fromProduct productID: String, skillsPath: String) throws {
-        let rootURL = URL(fileURLWithPath: skillsPath)
+        let rootURL = URL(fileURLWithPath: expandedPath(skillsPath)).standardizedFileURL
         let fm = Foundation.FileManager.default
+
+        var isRootDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: rootURL.path, isDirectory: &isRootDirectory), isRootDirectory.boolValue else {
+            throw SkillHubError.invalidManifest("Skills directory does not exist or is not a directory: \(rootURL.path)")
+        }
+
+        guard fm.isReadableFile(atPath: rootURL.path) else {
+            throw SkillHubError.invalidManifest("Skills directory is not readable: \(rootURL.path)")
+        }
 
         var sourceFolder: URL?
         var manifestFile: URL?
 
-        if let contents = try? fm.contentsOfDirectory(at: rootURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+        if let contents = try? fm.contentsOfDirectory(
+            at: rootURL,
+            includingPropertiesForKeys: [],
+            options: Foundation.FileManager.DirectoryEnumerationOptions.skipsHiddenFiles
+        ) {
             for folderURL in contents {
+                var isDirectory: ObjCBool = false
+                guard fm.fileExists(atPath: folderURL.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                    continue
+                }
+
                 let candidates = [
                     folderURL.appendingPathComponent("skill.json"),
                     folderURL.appendingPathComponent("manifest.json")
@@ -150,8 +168,11 @@ final class SkillService {
             throw SkillHubError.invalidManifest("Could not find source folder for skill \(manifest.id) in \(skillsPath)")
         }
 
+        try ensureSkillHubDirectoryAccess()
+
         // Use CLI to stage the skill (robust copy and store update)
-        try runSkillHub(arguments: ["stage", manifestPath.path], action: "stage skill")
+        let normalizedManifestPath = normalizePathForCLI(manifestPath)
+        try runSkillHub(arguments: ["stage", normalizedManifestPath], action: "stage skill")
 
         let hubSkillsDir = SkillHubPaths.defaultSkillsDirectory()
         let destination = hubSkillsDir.appendingPathComponent(manifest.id)
@@ -194,19 +215,66 @@ final class SkillService {
     private func runSkillHub(arguments: [String], action: String) throws {
         let cliPath = try findSkillHubCLI()
         let process = Process()
+        let errorPipe = Pipe()
+
         process.executableURL = URL(fileURLWithPath: cliPath)
         process.arguments = arguments
         process.standardOutput = FileHandle.standardOutput
-        process.standardError = FileHandle.standardError
+        process.standardError = errorPipe
 
         try process.run()
         process.waitUntilExit()
 
+        let stderrData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        let stderrOutput = String(data: stderrData, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
         guard process.terminationStatus == 0 else {
+            let errorDetail = (stderrOutput?.isEmpty == false)
+                ? " stderr: \(stderrOutput!)"
+                : ""
             throw SkillHubError.invalidManifest(
-                "Failed to \(action) (exit code: \(process.terminationStatus), cli: \(cliPath))"
+                "Failed to \(action) (exit code: \(process.terminationStatus), cli: \(cliPath), args: \(arguments))\(errorDetail)"
             )
         }
+    }
+
+    private func ensureSkillHubDirectoryAccess() throws {
+        let fm = Foundation.FileManager.default
+        let requiredDirectories = [
+            SkillHubPaths.defaultStateDirectory(),
+            SkillHubPaths.defaultSkillsDirectory(),
+            SkillHubPaths.defaultBackupsDirectory()
+        ]
+
+        for directory in requiredDirectories {
+            do {
+                try FileSystemUtils.ensureDirectoryExists(at: directory)
+            } catch {
+                throw SkillHubError.invalidManifest(
+                    "Cannot create SkillHub directory at \(directory.path): \(error.localizedDescription)"
+                )
+            }
+
+            var isDirectory: ObjCBool = false
+            guard fm.fileExists(atPath: directory.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                throw SkillHubError.invalidManifest("SkillHub path is not a directory: \(directory.path)")
+            }
+
+            guard fm.isReadableFile(atPath: directory.path), fm.isWritableFile(atPath: directory.path) else {
+                throw SkillHubError.invalidManifest(
+                    "Insufficient permissions for SkillHub directory: \(directory.path). Please grant read/write access."
+                )
+            }
+        }
+    }
+
+    private func normalizePathForCLI(_ url: URL) -> String {
+        url.standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    private func expandedPath(_ path: String) -> String {
+        (path as NSString).expandingTildeInPath
     }
 
     private func findSkillHubCLI() throws -> String {
