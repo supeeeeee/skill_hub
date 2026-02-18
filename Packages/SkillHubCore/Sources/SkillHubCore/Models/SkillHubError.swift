@@ -1,6 +1,6 @@
 import Foundation
 
-public enum SkillHubError: Error, CustomStringConvertible {
+public enum SkillHubError: Error, LocalizedError, CustomNSError, CustomStringConvertible {
     case invalidManifest(String)
     case stateFileCorrupted(String)
     case adapterNotFound(String)
@@ -23,5 +23,34 @@ public enum SkillHubError: Error, CustomStringConvertible {
         case .notImplemented(let reason):
             return "Not implemented: \(reason)"
         }
+    }
+
+    public var errorDescription: String? {
+        description
+    }
+
+    public static var errorDomain: String {
+        "SkillHubCore.SkillHubError"
+    }
+
+    public var errorCode: Int {
+        switch self {
+        case .invalidManifest:
+            return 1001
+        case .stateFileCorrupted:
+            return 1002
+        case .adapterNotFound:
+            return 1003
+        case .adapterEnvironmentInvalid:
+            return 1004
+        case .unsupportedInstallMode:
+            return 1005
+        case .notImplemented:
+            return 1006
+        }
+    }
+
+    public var errorUserInfo: [String : Any] {
+        [NSLocalizedDescriptionKey: description]
     }
 }

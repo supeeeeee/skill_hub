@@ -118,7 +118,7 @@ final class SkillService {
 
     func acquireSkill(manifest: SkillManifest, fromProduct productID: String, skillsPath: String) throws {
         let rootURL = URL(fileURLWithPath: expandedPath(skillsPath)).standardizedFileURL
-        let fm = Foundation.FileManager.default
+        let fm = Foundation.FileManager()
 
         var isRootDirectory: ObjCBool = false
         guard fm.fileExists(atPath: rootURL.path, isDirectory: &isRootDirectory), isRootDirectory.boolValue else {
@@ -215,32 +215,51 @@ final class SkillService {
     private func runSkillHub(arguments: [String], action: String) throws {
         let cliPath = try findSkillHubCLI()
         let process = Process()
+        let outputPipe = Pipe()
         let errorPipe = Pipe()
 
         process.executableURL = URL(fileURLWithPath: cliPath)
         process.arguments = arguments
-        process.standardOutput = FileHandle.standardOutput
+        process.standardOutput = outputPipe
         process.standardError = errorPipe
 
-        try process.run()
+        do {
+            try process.run()
+        } catch {
+            throw SkillHubError.invalidManifest(
+                "Failed to \(action): unable to launch skillhub at \(cliPath). \(error.localizedDescription)"
+            )
+        }
+
         process.waitUntilExit()
 
-        let stderrData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-        let stderrOutput = String(data: stderrData, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let stdoutOutput = readPipeOutput(outputPipe)
+        let stderrOutput = readPipeOutput(errorPipe)
 
         guard process.terminationStatus == 0 else {
-            let errorDetail = (stderrOutput?.isEmpty == false)
-                ? " stderr: \(stderrOutput!)"
-                : ""
+            var details: [String] = []
+            if !stderrOutput.isEmpty {
+                details.append("stderr: \(stderrOutput)")
+            }
+            if !stdoutOutput.isEmpty {
+                details.append("stdout: \(stdoutOutput)")
+            }
+            let detailSuffix = details.isEmpty ? "" : ". " + details.joined(separator: " | ")
+
             throw SkillHubError.invalidManifest(
-                "Failed to \(action) (exit code: \(process.terminationStatus), cli: \(cliPath), args: \(arguments))\(errorDetail)"
+                "Failed to \(action) (exit code: \(process.terminationStatus), cli: \(cliPath), args: \(arguments))\(detailSuffix)"
             )
         }
     }
 
+    private func readPipeOutput(_ pipe: Pipe) -> String {
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
     private func ensureSkillHubDirectoryAccess() throws {
-        let fm = Foundation.FileManager.default
+        let fm = Foundation.FileManager()
         let requiredDirectories = [
             SkillHubPaths.defaultStateDirectory(),
             SkillHubPaths.defaultSkillsDirectory(),
@@ -278,8 +297,8 @@ final class SkillService {
     }
 
     private func findSkillHubCLI() throws -> String {
-        let fm = Foundation.FileManager.default
-        let cwd = fm.currentDirectoryPath
+        let fm = Foundation.FileManager()
+        let cwd = URL(fileURLWithPath: ".").standardizedFileURL.path
         var paths = [
             "/usr/local/bin/skillhub",
             "/opt/homebrew/bin/skillhub",
@@ -320,7 +339,7 @@ final class SkillService {
     }
 
     private func resolveFromPATH(binary: String) -> String? {
-        let fm = Foundation.FileManager.default
+        let fm = Foundation.FileManager()
         let pathVariable = ProcessInfo.processInfo.environment["PATH"] ?? ""
         let components = pathVariable.split(separator: ":").map(String.init)
 

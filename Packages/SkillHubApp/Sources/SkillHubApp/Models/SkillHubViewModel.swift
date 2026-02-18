@@ -35,7 +35,7 @@ class SkillHubViewModel: ObservableObject {
         do {
             self.skills = try skillService.loadSkills()
         } catch {
-            log("Failed to load skills: \(error.localizedDescription)", type: .error)
+            log("Failed to load skills: \(errorMessage(from: error))", type: .error)
             self.skills = []
         }
 
@@ -83,7 +83,7 @@ class SkillHubViewModel: ObservableObject {
             log("Imported skill: \(manifest.name)", type: .success)
             loadData()
         } catch {
-            log("Failed to import skill: \(error.localizedDescription)", type: .error)
+            log("Failed to import skill: \(errorMessage(from: error))", type: .error)
         }
     }
 
@@ -95,7 +95,7 @@ class SkillHubViewModel: ObservableObject {
             log("Successfully registered skill from \(source)", type: .success)
             loadData()
         } catch {
-            log("Failed to register skill: \(error.localizedDescription)", type: .error)
+            log("Failed to register skill: \(errorMessage(from: error))", type: .error)
         }
     }
 
@@ -121,7 +121,7 @@ class SkillHubViewModel: ObservableObject {
             return (true, successMsg, isStubbed)
 
         } catch {
-            let errorMsg = "Error installing \(manifest.name): \(error.localizedDescription)"
+            let errorMsg = "Error installing \(manifest.name): \(errorMessage(from: error))"
             log(errorMsg, type: .error)
             return (false, errorMsg, isStubbed)
         }
@@ -135,7 +135,7 @@ class SkillHubViewModel: ObservableObject {
             log("Successfully uninstalled \(manifest.name) from \(productID)", type: .success)
             loadData()
         } catch {
-            log("Error uninstalling \(manifest.name): \(error.localizedDescription)", type: .error)
+            log("Error uninstalling \(manifest.name): \(errorMessage(from: error))", type: .error)
         }
     }
     
@@ -157,7 +157,7 @@ class SkillHubViewModel: ObservableObject {
             log("\(enabled ? "Enabled" : "Disabled") \(manifest.name) for \(productID)", type: .success)
             loadData()
         } catch {
-            log("Error changing state for \(manifest.name): \(error.localizedDescription)", type: .error)
+            log("Error changing state for \(manifest.name): \(errorMessage(from: error))", type: .error)
         }
     }
     
@@ -180,7 +180,7 @@ class SkillHubViewModel: ObservableObject {
             loadData()
 
         } catch {
-            log("Failed to acquire skill: \(error.localizedDescription)", type: .error)
+            log("Failed to acquire skill: \(errorMessage(from: error))", type: .error)
         }
     }
 
@@ -214,7 +214,7 @@ class SkillHubViewModel: ObservableObject {
             // Re-run doctor to verify
             runDoctor(for: productID)
         } catch {
-            log("Failed to fix issue: \(error.localizedDescription)", type: .error)
+            log("Failed to fix issue: \(errorMessage(from: error))", type: .error)
         }
     }
 
@@ -235,7 +235,7 @@ class SkillHubViewModel: ObservableObject {
                 log("No installed skills to check for \(productID).", type: .info)
             }
         } catch {
-            log("Failed to check updates for \(productID): \(error.localizedDescription)", type: .error)
+            log("Failed to check updates for \(productID): \(errorMessage(from: error))", type: .error)
         }
     }
 
@@ -250,7 +250,48 @@ class SkillHubViewModel: ObservableObject {
                 log("Updated config path for \(productID)", type: .success)
             }
         } catch {
-            log("Failed to update config path: \(error.localizedDescription)", type: .error)
+            log("Failed to update config path: \(errorMessage(from: error))", type: .error)
         }
+    }
+
+    private func errorMessage(from error: Error) -> String {
+        if let skillHubError = error as? SkillHubError {
+            return skillHubError.description
+        }
+
+        if let localizedError = error as? LocalizedError,
+           let description = localizedError.errorDescription?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !description.isEmpty {
+            return description
+        }
+
+        let nsError = error as NSError
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? Error {
+            let underlyingMessage = errorMessage(from: underlying)
+            if !underlyingMessage.isEmpty {
+                return underlyingMessage
+            }
+        }
+
+        let localizedDescription = nsError.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !localizedDescription.isEmpty && !isOpaqueNSErrorMessage(nsError, localizedDescription) {
+            return localizedDescription
+        }
+
+        let reflected = String(describing: error).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !reflected.isEmpty {
+            return reflected
+        }
+
+        return "Unknown error"
+    }
+
+    private func isOpaqueNSErrorMessage(_ error: NSError, _ message: String) -> Bool {
+        if error.domain == SkillHubError.errorDomain && error.code == 0 {
+            return true
+        }
+
+        return message.hasPrefix("The operation couldn’t be completed.")
+            || message.hasPrefix("The operation could not be completed.")
     }
 }
