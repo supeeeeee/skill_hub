@@ -7,6 +7,7 @@ public protocol SkillStore {
     func setEnabled(skillID: String, productID: String, enabled: Bool) throws
     func markInstalled(skillID: String, productID: String, installMode: InstallMode) throws
     func markUninstalled(skillID: String, productID: String) throws
+    func setHasUpdate(skillID: String, hasUpdate: Bool) throws
     func removeSkill(skillID: String) throws
 }
 
@@ -70,6 +71,17 @@ public final class JSONSkillStore: SkillStore {
             )
         }
 
+        try saveState(state)
+    }
+    
+    public func setHasUpdate(skillID: String, hasUpdate: Bool) throws {
+        var state = try loadState()
+        guard let index = state.skills.firstIndex(where: { $0.manifest.id == skillID }) else {
+            throw SkillHubError.invalidManifest("Skill not found: \(skillID)")
+        }
+
+        state.skills[index].hasUpdate = hasUpdate
+        state.updatedAt = Date()
         try saveState(state)
     }
 

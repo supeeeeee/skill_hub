@@ -5,6 +5,7 @@ public enum InstallMode: String, Codable, CaseIterable, Sendable {
     case symlink
     case copy
     case configPatch
+    case unknown
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -19,10 +20,7 @@ public enum InstallMode: String, Codable, CaseIterable, Sendable {
         case "configPatch", "config-patch":
             self = .configPatch
         default:
-            throw DecodingError.dataCorruptedError(
-                in: container,
-                debugDescription: "Unsupported install mode: \(rawValue)"
-            )
+            self = .unknown
         }
     }
 
@@ -87,6 +85,7 @@ public struct InstalledSkillRecord: Codable, Equatable, Identifiable {
     public var installedProducts: [String]
     public var enabledProducts: [String]
     public var lastInstallModeByProduct: [String: InstallMode]
+    public var hasUpdate: Bool = false
 
     public init(
         manifest: SkillManifest,
@@ -94,7 +93,8 @@ public struct InstalledSkillRecord: Codable, Equatable, Identifiable {
         manifestSource: String? = nil,
         installedProducts: [String] = [],
         enabledProducts: [String] = [],
-        lastInstallModeByProduct: [String: InstallMode] = [:]
+        lastInstallModeByProduct: [String: InstallMode] = [:],
+        hasUpdate: Bool = false
     ) {
         self.manifest = manifest
         self.manifestPath = manifestPath
@@ -102,6 +102,7 @@ public struct InstalledSkillRecord: Codable, Equatable, Identifiable {
         self.installedProducts = installedProducts
         self.enabledProducts = enabledProducts
         self.lastInstallModeByProduct = lastInstallModeByProduct
+        self.hasUpdate = hasUpdate
     }
 }
 
@@ -118,5 +119,41 @@ public struct SkillHubState: Codable, Equatable {
         self.schemaVersion = schemaVersion
         self.skills = skills
         self.updatedAt = updatedAt
+    }
+}
+
+public enum HealthStatus: String, Codable, CaseIterable, Sendable {
+    case healthy
+    case warning
+    case unknown
+    case error
+}
+
+public struct FixSuggestion: Codable, Sendable, Identifiable {
+    public var id: String { label }
+    public let label: String
+    public let action: String
+    public let description: String
+    public let isAutomated: Bool
+
+    public init(label: String, action: String, description: String, isAutomated: Bool = true) {
+        self.label = label
+        self.action = action
+        self.description = description
+        self.isAutomated = isAutomated
+    }
+}
+
+public struct DiagnosticIssue: Identifiable, Sendable {
+    public let id: String
+    public let message: String
+    public let isFixable: Bool
+    public let suggestion: FixSuggestion?
+
+    public init(id: String, message: String, isFixable: Bool, suggestion: FixSuggestion? = nil) {
+        self.id = id
+        self.message = message
+        self.isFixable = isFixable
+        self.suggestion = suggestion
     }
 }

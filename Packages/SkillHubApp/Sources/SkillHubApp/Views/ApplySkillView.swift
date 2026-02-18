@@ -123,6 +123,7 @@ struct ApplySkillView: View {
         case .copy: return "Standalone Copy"
         case .configPatch: return "Native Integration"
         case .auto: return "Auto (Smart Select)"
+        default: return "Unknown Mode"
         }
     }
 
@@ -155,6 +156,8 @@ struct ApplySkillView: View {
                     summary = "Installed via Native Integration."
                 case .auto:
                     summary = "Smart Install complete."
+                default:
+                    summary = "Installed successfully."
                 }
                 
                 installationStatus = (isStubbed ? "Installation simulated (MVP). \(message)" : "\(summary) \(message)", .success)

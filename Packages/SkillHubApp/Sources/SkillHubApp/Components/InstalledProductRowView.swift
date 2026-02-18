@@ -65,11 +65,12 @@ struct InstalledProductRowView: View {
     }
     
     private func iconForMode(_ mode: InstallMode) -> String {
-        switch mode.rawValue.lowercased() {
-        case "symlink": return "link"
-        case "copy": return "doc.on.doc"
-        case "reference": return "arrow.turn.up.right"
-        default: return "gearshape"
+        switch mode {
+        case .symlink: return "link"
+        case .copy: return "doc.on.doc"
+        case .configPatch: return "gearshape"
+        case .auto: return "sparkles"
+        default: return "questionmark"
         }
     }
 }

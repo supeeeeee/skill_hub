@@ -137,17 +137,34 @@ struct SkillCardView: View {
     }
     
     private var badgesView: some View {
-        HStack(spacing: -4) {
-            ForEach(skill.installedProducts.sorted(), id: \.self) { productID in
-                if let icon = productIcons[productID] {
-                    productBadge(productID: productID, icon: icon)
+        HStack(spacing: 6) {
+            if skill.hasUpdate {
+                HStack(spacing: 2) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                    Text("Update")
                 }
+                .font(.caption2)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.blue)
+                .cornerRadius(4)
+                .help("Update available")
             }
-            
-            if skill.installedProducts.isEmpty {
-                Text("Not installed")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+
+            HStack(spacing: -4) {
+                ForEach(skill.installedProducts.sorted(), id: \.self) { productID in
+                    if let icon = productIcons[productID] {
+                        productBadge(productID: productID, icon: icon)
+                    }
+                }
+
+                if skill.installedProducts.isEmpty {
+                    Text("Not installed")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
             }
         }
     }

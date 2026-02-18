@@ -124,6 +124,8 @@ public struct CursorAdapter: ProductAdapter {
 
         case .auto:
             throw SkillHubError.unsupportedInstallMode("auto mode requires resolution before enable")
+        default:
+            fatalError("Unknown install mode: \(resolvedMode)")
         }
     }
 

@@ -7,6 +7,7 @@ class SkillHubViewModel: ObservableObject {
     @Published var products: [Product] = []
     @Published var skills: [InstalledSkillRecord] = []
     @Published var unregisteredSkillsByProduct: [String: [SkillManifest]] = [:]
+    @Published var healthResults: [String: DiagnosticIssue] = [:]
     @Published var toasts: [Toast] = []
     @Published var isLoading = false
     
@@ -32,17 +33,17 @@ class SkillHubViewModel: ObservableObject {
     
     func loadData() {
         isLoading = true
-        // Load skills
+        
+        // 1. Load local state (Synchronous/Fast)
         do {
             let state = try skillStore.loadState()
             self.skills = state.skills
-            log("Loaded \(state.skills.count) skills from state.", type: .info)
         } catch {
             log("Failed to load skills: \(error.localizedDescription)", type: .error)
             self.skills = []
         }
         
-        // Load products
+        // 2. Load products and detection (Synchronous/Fast)
         let cfg = SkillHubConfig.load()
         var newProducts: [Product] = []
         for adapter in adapterRegistry.all() {
@@ -62,24 +63,38 @@ class SkillHubViewModel: ObservableObject {
         }
         self.products = newProducts
         
-        // Scan for unregistered skills
-        var newUnregistered: [String: [SkillManifest]] = [:]
-        for product in newProducts {
-            let skillsPath = product.customSkillsPath ?? defaultSkillsPath(for: product.id)
-            let found = scanForUnregisteredSkills(at: skillsPath)
-            let unregistered = found.filter { m in
-                !self.skills.contains(where: { $0.manifest.id == m.id })
-            }
-            if !unregistered.isEmpty {
-                newUnregistered[product.id] = unregistered
-            }
+        // 3. Scan for unregistered skills (Asynchronous/Disk I/O)
+        Task {
+            let unregistered = await performBackgroundScan(for: newProducts)
+            self.unregisteredSkillsByProduct = unregistered
+            self.isLoading = false
         }
-        self.unregisteredSkillsByProduct = newUnregistered
-        
-        isLoading = false
     }
     
-    private func defaultSkillsPath(for productID: String) -> String {
+    private func performBackgroundScan(for products: [Product]) async -> [String: [SkillManifest]] {
+        // Move to background thread
+        return await Task.detached(priority: .userInitiated) {
+            var newUnregistered: [String: [SkillManifest]] = [:]
+            
+            // Capture skills to avoid MainActor access during loop
+            let registeredIDs = Set(await self.skills.map { $0.manifest.id })
+            
+            for product in products {
+                let skillsPath = self.defaultSkillsPath(for: product.id)
+                let finalPath = product.customSkillsPath ?? skillsPath
+                
+                let found = self.scanForUnregisteredSkills(at: finalPath)
+                let unregistered = found.filter { !registeredIDs.contains($0.id) }
+                
+                if !unregistered.isEmpty {
+                    newUnregistered[product.id] = unregistered
+                }
+            }
+            return newUnregistered
+        }.value
+    }
+    
+    nonisolated private func defaultSkillsPath(for productID: String) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         switch productID {
         case "openclaw": return "\(home)/.openclaw/skills"
@@ -91,7 +106,7 @@ class SkillHubViewModel: ObservableObject {
         }
     }
     
-    private func scanForUnregisteredSkills(at path: String) -> [SkillManifest] {
+    nonisolated private func scanForUnregisteredSkills(at path: String) -> [SkillManifest] {
         var results: [SkillManifest] = []
         let fm = FileManager.default
         let url = URL(fileURLWithPath: path)
@@ -361,14 +376,19 @@ class SkillHubViewModel: ObservableObject {
         do {
             try FileSystemUtils.ensureDirectoryExists(at: hubSkillsDir)
             try FileSystemUtils.copyItem(from: source, to: dest)
-            log("Copied skill to \(dest.path)", type: .info)
+            log("Copied skill to Hub: \(dest.path)", type: .info)
             
-            // 3. Register and Mark Installed
-            let manifestPath = dest.appendingPathComponent("skill.json").path // Assume skill.json or keep original name?
-            // The copy keeps the original filenames. Let's check what it was.
-            // But upsertSkill expects the path to the manifest file.
-            // If source had manifest.json, dest has manifest.json.
+            // 3. Takeover: Replace product's local copy with symlink to Hub
+            // Backup first
+            if let backupUrl = try FileSystemUtils.backupIfExists(at: source, productID: productID, skillID: manifest.id) {
+                log("Backed up original folder to \(backupUrl.lastPathComponent)", type: .info)
+            }
             
+            // Create symlink
+            try FileSystemUtils.createSymlink(from: dest, to: source)
+            log("Replaced local folder with symlink to Hub.", type: .info)
+
+            // 4. Register and Mark Installed
             let destManifestPath: String
             if fm.fileExists(atPath: dest.appendingPathComponent("skill.json").path) {
                 destManifestPath = dest.appendingPathComponent("skill.json").path
@@ -378,18 +398,108 @@ class SkillHubViewModel: ObservableObject {
             
             try skillStore.upsertSkill(manifest: manifest, manifestPath: destManifestPath)
             
-            // Mark as installed for this product (assuming 'copy' mode or 'auto')
-            // Since we just copied it FROM the product, the product presumably has it.
-            // But if we want to manage it, we might eventually want to overwrite the product's copy with ours?
-            // For now, just mark it.
-            try skillStore.markInstalled(skillID: manifest.id, productID: productID, installMode: .copy)
+            // Mark as installed via symlink
+            try skillStore.markInstalled(skillID: manifest.id, productID: productID, installMode: .symlink)
             try skillStore.setEnabled(skillID: manifest.id, productID: productID, enabled: true)
             
-            log("Successfully acquired \(manifest.name)", type: .success)
+            log("Successfully acquired and took over \(manifest.name)", type: .success)
             loadData()
             
         } catch {
             log("Failed to acquire skill: \(error.localizedDescription)", type: .error)
+        }
+    }
+
+    func runDoctor(for productID: String) {
+        log("Running doctor for \(productID)...", type: .info)
+        let fm = FileManager.default
+
+        guard let product = products.first(where: { $0.id == productID }) else {
+            log("Doctor failed: Product \(productID) not found.", type: .error)
+            return
+        }
+
+        let skillsPath = product.customSkillsPath ?? defaultSkillsPath(for: productID)
+        let pathURL = URL(fileURLWithPath: skillsPath)
+
+        // Check 1: Skills Directory exists
+        if !fm.fileExists(atPath: pathURL.path) {
+            healthResults[productID] = DiagnosticIssue(
+                id: productID,
+                message: "⚠️ Skills directory does not exist: \(skillsPath)",
+                isFixable: true,
+                fixActionLabel: "Create Directory"
+            )
+            updateProductHealth(productID, status: .warning)
+        } else {
+            // Check 2: Permissions (simplified)
+            if !fm.isReadableFile(atPath: pathURL.path) || !fm.isWritableFile(atPath: pathURL.path) {
+                healthResults[productID] = DiagnosticIssue(
+                    id: productID,
+                    message: "⚠️ Permissions issue for \(skillsPath). Please check Read/Write access.",
+                    isFixable: false,
+                    fixActionLabel: nil
+                )
+                updateProductHealth(productID, status: .warning)
+            } else {
+                healthResults[productID] = DiagnosticIssue(
+                    id: productID,
+                    message: "✅ No issues found.",
+                    isFixable: false,
+                    fixActionLabel: nil
+                )
+                updateProductHealth(productID, status: .healthy)
+            }
+        }
+
+        log("Doctor completed for \(productID)", type: .info)
+    }
+
+    func fixIssue(for productID: String) async {
+        guard let issue = healthResults[productID], issue.isFixable else { return }
+        log("Attempting to fix issue for \(productID)...", type: .info)
+
+        guard let product = products.first(where: { $0.id == productID }) else { return }
+        let skillsPath = product.customSkillsPath ?? defaultSkillsPath(for: productID)
+        let pathURL = URL(fileURLWithPath: skillsPath)
+
+        do {
+            if issue.fixActionLabel == "Create Directory" {
+                try FileManager.default.createDirectory(at: pathURL, withIntermediateDirectories: true)
+                log("Created directory: \(skillsPath)", type: .success)
+            }
+            
+            // Re-run doctor to verify
+            runDoctor(for: productID)
+        } catch {
+            log("Failed to fix issue: \(error.localizedDescription)", type: .error)
+        }
+    }
+
+    private func updateProductHealth(_ productID: String, status: HealthStatus) {
+        if let index = products.firstIndex(where: { $0.id == productID }) {
+            products[index].health = status
+        }
+    }
+
+    func checkForUpdates(for productID: String) {
+        log("Checking for updates for \(productID)...", type: .info)
+
+        // Placeholder Logic:
+        // Real impl would fetch latest manifest version for installed skills and compare.
+        // For now, randomly mark 1 skill as having update if available for demo.
+
+        let skillsToCheck = skills.filter { $0.installedProducts.contains(productID) }
+        guard !skillsToCheck.isEmpty else {
+            log("No installed skills to check for \(productID).", type: .info)
+            return
+        }
+
+        // Simple mock: mark the first skill as having an update
+        if let skill = skillsToCheck.first {
+            try? skillStore.setHasUpdate(skillID: skill.manifest.id, hasUpdate: true)
+            log("Found update for \(skill.manifest.name).", type: .success)
+            loadData()
         }
     }
 }

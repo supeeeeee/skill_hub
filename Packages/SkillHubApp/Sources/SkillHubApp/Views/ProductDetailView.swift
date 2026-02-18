@@ -63,6 +63,20 @@ struct ProductDetailView: View {
                                 .foregroundColor(.accentColor)
                                 .cornerRadius(12)
                             }
+
+                            // Health Badge
+                            HStack(spacing: 4) {
+                                Image(systemName: healthIcon(for: product.health))
+                                    .font(.caption2)
+                                Text(product.health.rawValue.capitalized)
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(healthColor(for: product.health).opacity(0.1))
+                            .foregroundColor(healthColor(for: product.health))
+                            .cornerRadius(12)
                         }
 
                         Text(product.description)
@@ -130,13 +144,71 @@ struct ProductDetailView: View {
 
                     Spacer()
 
-                    if productDetection?.isDetected != true {
-                        Button("Run Doctor") {
-                            // Navigate to Doctor or show hint
+                    HStack(spacing: 12) {
+                        Button(action: {
+                            viewModel.checkForUpdates(for: product.id)
+                        }) {
+                            Label("Check Updates", systemImage: "arrow.triangle.2.circlepath")
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+
+                        if productDetection?.isDetected == true || product.health != .healthy {
+                            Button(action: {
+                                viewModel.runDoctor(for: product.id)
+                            }) {
+                                Label("Run Doctor", systemImage: "stethoscope")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .tint(.orange)
+                        }
                     }
+                }
+
+                // Health Result Display
+                if let issue = viewModel.healthResults[product.id] {
+                    HStack {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundColor(.secondary)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(issue.message)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.leading)
+                            
+                            if issue.isFixable, let label = issue.fixActionLabel {
+                                Button(action: {
+                                    Task {
+                                        await viewModel.fixIssue(for: product.id)
+                                    }
+                                }) {
+                                    Label(label, systemImage: "wand.and.stars")
+                                        .font(.caption)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .tint(.green)
+                            }
+                        }
+                        
+                        Spacer()
+                        
+                        Button(action: { viewModel.healthResults.removeValue(forKey: product.id) }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(12)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.orange.opacity(0.5), lineWidth: 1)
+                    )
+                    .padding(.bottom, 8)
                 }
 
                 // Filters & Search
@@ -274,6 +346,22 @@ struct ProductDetailView: View {
         default: return "\(home)/.skillhub/products/\(productID)/skills"
         }
     }
+
+    private func healthIcon(for status: HealthStatus) -> String {
+        switch status {
+        case .healthy: return "checkmark.shield.fill"
+        case .warning: return "exclamationmark.shield.fill"
+        case .unknown: return "shield.slash"
+        }
+    }
+
+    private func healthColor(for status: HealthStatus) -> Color {
+        switch status {
+        case .healthy: return .green
+        case .warning: return .orange
+        case .unknown: return .secondary
+        }
+    }
 }
 
 struct UnregisteredSkillRow: View {
@@ -350,6 +438,7 @@ struct ProductSkillRow: View {
             case .copy: modeLabel = "Standalone Copy"
             case .configPatch: modeLabel = "Native"
             case .auto: modeLabel = "Smart Install"
+            default: modeLabel = "Unknown"
             }
             return "\(status) (\(modeLabel))"
         }

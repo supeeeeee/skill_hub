@@ -66,6 +66,8 @@ public struct CodexAdapter: ProductAdapter {
             try FileSystemUtils.copyItem(from: source, to: destination)
         case .auto, .configPatch:
             throw SkillHubError.unsupportedInstallMode("\(resolvedMode.rawValue) for \(id) enable")
+        default:
+            fatalError("Unknown install mode: \(resolvedMode)")
         }
     }
 
