@@ -2,6 +2,7 @@ import SwiftUI
 import SkillHubCore
 
 struct ProductCardView: View {
+    @EnvironmentObject var preferences: UserPreferences
     let product: Product
     var installedSkillsCount: Int = 0
     var enabledSkillsCount: Int = 0
@@ -27,7 +28,7 @@ struct ProductCardView: View {
                         Label("\(enabledSkillsCount) enabled", systemImage: "checkmark.circle.fill")
                             .font(.caption2)
                             .foregroundColor(.green)
-                        Label("\(installedSkillsCount - enabledSkillsCount) installed", systemImage: "arrow.down.circle")
+                        Label("\(installedSkillsCount - enabledSkillsCount) deployed", systemImage: "arrow.down.circle")
                             .font(.caption2)
                             .foregroundColor(.blue)
                     }
@@ -40,7 +41,7 @@ struct ProductCardView: View {
                 StatusBadgeView(status: product.status)
                 
                 HStack(spacing: 4) {
-                    ForEach(product.supportedModes, id: \.self) { mode in
+                    ForEach(product.supportedModes.filter { preferences.isAdvancedMode || $0 != .configPatch }, id: \.self) { mode in
                         ModePillView(mode: mode)
                     }
                 }

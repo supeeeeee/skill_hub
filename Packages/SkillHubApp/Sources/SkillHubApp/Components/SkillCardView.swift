@@ -154,14 +154,14 @@ struct SkillCardView: View {
             }
 
             HStack(spacing: -4) {
-                ForEach(skill.installedProducts.sorted(), id: \.self) { productID in
+                ForEach(skill.deployedProducts.sorted(), id: \.self) { productID in
                     if let icon = productIcons[productID] {
                         productBadge(productID: productID, icon: icon)
                     }
                 }
 
-                if skill.installedProducts.isEmpty {
-                    Text("Not installed")
+                if skill.deployedProducts.isEmpty {
+                    Text("Not deployed")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }

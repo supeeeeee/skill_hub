@@ -28,7 +28,7 @@ struct SkillsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if viewModel.skills.isEmpty {
                 EmptyStateView(
-                    title: "No Skills Installed",
+                    title: "No Skills Deployed",
                     message: "Register skills to extend your development tools.",
                     iconName: "square.grid.2x2",
                     action: { showRegisterOptions = true },

@@ -5,7 +5,7 @@
 SkillHub is split into two Swift packages:
 
 1. `SkillHubCore` (library)
-   - Domain models (`SkillManifest`, `SkillHubState`, install modes)
+   - Domain models (`SkillManifest`, `SkillHubState`, deploy modes)
    - JSON state store (`JSONSkillStore`)
    - Adapter protocol and registry
    - Filesystem utility helpers
@@ -45,9 +45,17 @@ File schema:
 `InstalledSkillRecord` fields:
 - `manifest` (`SkillManifest` snapshot)
 - `manifestPath` (string)
-- `installedProducts` ([string])
+- `deployedProducts` ([string])
 - `enabledProducts` ([string])
-- `lastInstallModeByProduct` (map productID->installMode)
+- `lastDeployModeByProduct` (map productID->installMode)
+- `isSample` (bool)
+- `isDiscovery` (bool)
+
+Terminology definitions:
+- `add`: register skill metadata and prepare managed local skill files in `~/.skillhub/skills/<id>`.
+- `deploy`: apply prepared skill files to a target product and persist deploy mode.
+- `sample skill`: built-in demo skill used for onboarding and examples.
+- `discovery skill`: recommended skill from curated discovery catalog.
 
 ## Storage Paths
 
@@ -102,11 +110,13 @@ Stub adapters include plausible TODO path constants and `configPatch` placeholde
    - Cons: highest corruption risk without strict patch model.
 
 CLI behavior:
-- Default install mode is `auto` when `--mode` is omitted.
-- `install` output shows both requested mode and chosen mode.
-- `stage <manifest-path>` copies the containing skill directory to `~/.skillhub/skills/<id>`.
+- Default deploy mode is `auto` when `--mode` is omitted.
+- `deploy` output shows both requested mode and chosen mode.
+- `add <manifest-path>` registers the skill and prepares the containing skill directory to `~/.skillhub/skills/<id>`.
+- `stage` is a deprecated alias of `add`.
+- `install` is a deprecated alias of `deploy`.
 - `unstage <skill-id>` deletes only the staged store copy.
-- `uninstall <skill-id> <product-id>` removes product activation/install state but leaves staged store files.
+- `uninstall <skill-id> <product-id>` removes product activation/deploy state but leaves staged store files.
 - `remove <skill-id> [--purge]` deletes SkillHub state record, with optional staged store purge.
 
 OpenClaw behavior:

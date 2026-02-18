@@ -4,6 +4,7 @@ import SkillHubCore
 struct ProductDetailView: View {
     let product: Product
     @EnvironmentObject var viewModel: SkillHubViewModel
+    @EnvironmentObject var preferences: UserPreferences
     @State private var setupSkill: InstalledSkillRecord?
     @State private var searchText = ""
     @State private var productDetection: ProductDetectionResult?
@@ -12,13 +13,13 @@ struct ProductDetailView: View {
 
     var activeSkills: [InstalledSkillRecord] {
         viewModel.skills.filter { skill in
-            matchesSearch(skill) && skill.installedProducts.contains(product.id)
+            matchesSearch(skill) && skill.deployedProducts.contains(product.id)
         }
     }
 
     var librarySkills: [InstalledSkillRecord] {
         viewModel.skills.filter { skill in
-            matchesSearch(skill) && !skill.installedProducts.contains(product.id)
+            matchesSearch(skill) && !skill.deployedProducts.contains(product.id)
         }
     }
 
@@ -87,7 +88,7 @@ struct ProductDetailView: View {
                         HStack(spacing: 8) {
                             StatusBadgeView(status: productDetection?.isDetected == true ? .active : .notInstalled)
 
-                            ForEach(product.supportedModes, id: \.self) { mode in
+                            ForEach(product.supportedModes.filter { preferences.isAdvancedMode || $0 != .configPatch }, id: \.self) { mode in
                                 ModePillView(mode: mode)
                             }
                         }
@@ -101,40 +102,41 @@ struct ProductDetailView: View {
                         .stroke(Color.secondary.opacity(0.1), lineWidth: 1)
                 )
 
-                // Skills Directory Section
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Label("Skills Directory", systemImage: "folder")
-                            .font(.headline)
+                if preferences.isAdvancedMode {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Label("Skills Directory", systemImage: "folder")
+                                .font(.headline)
 
-                        Spacer()
+                            Spacer()
 
-                        Button(action: {
-                            editingPath = resolvedSkillsPath(for: product.id)
-                            showPathEditor = true
-                        }) {
-                            Label("Edit", systemImage: "pencil")
+                            Button(action: {
+                                editingPath = resolvedSkillsPath(for: product.id)
+                                showPathEditor = true
+                            }) {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+
+                        HStack {
+                            Image(systemName: "folder.fill")
+                                .foregroundColor(.secondary)
+                            Text(resolvedSkillsPath(for: product.id))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer()
+                        }
+                        .padding(12)
+                        .background(Color(nsColor: .controlBackgroundColor))
+                        .cornerRadius(8)
                     }
 
-                    HStack {
-                        Image(systemName: "folder.fill")
-                            .foregroundColor(.secondary)
-                        Text(resolvedSkillsPath(for: product.id))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Spacer()
-                    }
-                    .padding(12)
-                    .background(Color(nsColor: .controlBackgroundColor))
-                    .cornerRadius(8)
+                    Divider()
                 }
-
-                Divider()
 
                 // Skills Section Header
                 HStack {
@@ -252,7 +254,7 @@ struct ProductDetailView: View {
                         // Active Skills Section
                         if !activeSkills.isEmpty {
                             VStack(alignment: .leading, spacing: 16) {
-                                Label("Installed & Active", systemImage: "checkmark.circle.fill")
+                                Label("Deployed & Active", systemImage: "checkmark.circle.fill")
                                     .font(.headline)
                                     .foregroundColor(.green)
                                     .padding(.horizontal, 4)
@@ -410,9 +412,10 @@ struct ProductSkillRow: View {
     let productDetected: Bool
     let onSetup: () -> Void
     @EnvironmentObject var viewModel: SkillHubViewModel
+    @EnvironmentObject var preferences: UserPreferences
 
     private var isInstalled: Bool {
-        skill.installedProducts.contains(product.id)
+        skill.deployedProducts.contains(product.id)
     }
 
     private var isEnabled: Bool {
@@ -420,12 +423,12 @@ struct ProductSkillRow: View {
     }
 
     private var installMode: InstallMode? {
-        skill.lastInstallModeByProduct[product.id]
+        skill.lastDeployModeByProduct[product.id]
     }
 
     private var statusDetail: String {
         if !productDetected { return "Product not detected" }
-        if !isInstalled { return "Available to install" }
+        if !isInstalled { return "Available to deploy" }
 
         let status = isEnabled ? "Enabled" : "Disabled"
         if let mode = installMode {
@@ -434,10 +437,10 @@ struct ProductSkillRow: View {
             case .symlink: modeLabel = "Synced"
             case .copy: modeLabel = "Standalone Copy"
             case .configPatch: modeLabel = "Native"
-            case .auto: modeLabel = "Smart Install"
+            case .auto: modeLabel = "Smart Deploy"
             default: modeLabel = "Unknown"
             }
-            return "\(status) (\(modeLabel))"
+            return preferences.isAdvancedMode ? "\(status) (\(modeLabel))" : status
         }
         return status
     }
@@ -467,7 +470,7 @@ struct ProductSkillRow: View {
                     .controlSize(.small)
                     .disabled(true)
             } else if !isInstalled {
-                Button("Install to Product") {
+                Button("Deploy to Product") {
                     onSetup()
                 }
                 .buttonStyle(.borderedProminent)

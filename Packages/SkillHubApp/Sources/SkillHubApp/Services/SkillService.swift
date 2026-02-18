@@ -40,7 +40,7 @@ final class SkillService {
     func importSkill(at url: URL) throws -> SkillManifest {
         let data = try Data(contentsOf: url)
         let manifest = try JSONDecoder().decode(SkillManifest.self, from: data)
-        try skillStore.upsertSkill(manifest: manifest, manifestPath: url.path)
+        try skillStore.addSkill(manifest: manifest, manifestPath: url.path)
         return manifest
     }
 
@@ -78,11 +78,11 @@ final class SkillService {
         }
 
         let stagedManifestPath = destPath.appendingPathComponent("skill.json").path
-        try skillStore.upsertSkill(manifest: manifest, manifestPath: stagedManifestPath)
+        try skillStore.addSkill(manifest: manifest, manifestPath: stagedManifestPath)
 
         let adapter = try adapterRegistry.adapter(for: productID)
         let finalMode = try adapter.install(skill: manifest, mode: mode)
-        try skillStore.markInstalled(skillID: manifest.id, productID: productID, installMode: finalMode)
+        try skillStore.markDeployed(skillID: manifest.id, productID: productID, deployMode: finalMode)
 
         try adapter.enable(skillID: manifest.id, mode: finalMode)
         try skillStore.setEnabled(skillID: manifest.id, productID: productID, enabled: true)
@@ -103,8 +103,8 @@ final class SkillService {
         let adapter = try adapterRegistry.adapter(for: productID)
 
         guard let skillRecord = currentSkills.first(where: { $0.manifest.id == manifest.id }),
-              let mode = skillRecord.lastInstallModeByProduct[productID] else {
-            throw SkillHubError.invalidManifest("Skill \(manifest.name) is not installed for \(productID)")
+              let mode = skillRecord.lastDeployModeByProduct[productID] else {
+            throw SkillHubError.invalidManifest("Skill \(manifest.name) is not deployed for \(productID)")
         }
 
         if enabled {
@@ -162,13 +162,13 @@ final class SkillService {
             destManifestPath = destination.appendingPathComponent("manifest.json").path
         }
 
-        try skillStore.upsertSkill(manifest: manifest, manifestPath: destManifestPath)
-        try skillStore.markInstalled(skillID: manifest.id, productID: productID, installMode: .symlink)
+        try skillStore.addSkill(manifest: manifest, manifestPath: destManifestPath)
+        try skillStore.markDeployed(skillID: manifest.id, productID: productID, deployMode: .symlink)
         try skillStore.setEnabled(skillID: manifest.id, productID: productID, enabled: true)
     }
 
     func checkForUpdates(productID: String, skills: [InstalledSkillRecord]) throws -> String? {
-        let skillsToCheck = skills.filter { $0.installedProducts.contains(productID) }
+        let skillsToCheck = skills.filter { $0.deployedProducts.contains(productID) }
         guard let skill = skillsToCheck.first else {
             return nil
         }

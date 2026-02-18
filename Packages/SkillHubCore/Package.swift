@@ -11,7 +11,10 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "SkillHubCore"
+            name: "SkillHubCore",
+            resources: [
+                .process("Resources")
+            ]
         )
     ]
 )

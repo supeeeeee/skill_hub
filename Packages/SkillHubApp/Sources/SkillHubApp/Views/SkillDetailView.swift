@@ -4,6 +4,7 @@ import SkillHubCore
 struct SkillDetailView: View {
     let skill: InstalledSkillRecord
     @EnvironmentObject var viewModel: SkillHubViewModel
+    @EnvironmentObject var preferences: UserPreferences
     
     var body: some View {
         ScrollView {
@@ -31,9 +32,9 @@ struct SkillDetailView: View {
                 .background(Color(nsColor: .controlBackgroundColor))
                 .cornerRadius(12)
                 
-                // Installed Products
+                // Deployed Products
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Installed Products")
+                    Text("Deployed Products")
                         .font(.headline)
                     
                     if viewModel.products.isEmpty {
@@ -43,12 +44,13 @@ struct SkillDetailView: View {
                         ForEach(viewModel.products) { product in
                             if let adapter = try? viewModel.adapterRegistry.adapter(for: product.id) {
                                 let status = adapter.status(skillID: skill.manifest.id)
-                                let installMode = skill.lastInstallModeByProduct[product.id]
+                                let installMode = skill.lastDeployModeByProduct[product.id]
                                 
                                 InstalledProductRowView(
                                     product: product,
                                     installMode: installMode,
-                                    status: status
+                                    status: status,
+                                    showAdvancedMode: preferences.isAdvancedMode
                                 )
                             }
                         }

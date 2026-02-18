@@ -24,3 +24,15 @@ struct SkillBinding: Identifiable, Sendable {
     let products: [String] // List of product IDs
     let isEnabled: Bool
 }
+
+enum UIMode: String, CaseIterable, Codable, Sendable {
+    case simple
+    case pro
+}
+
+extension UserPreferences {
+    var uiMode: UIMode {
+        get { isAdvancedMode ? .pro : .simple }
+        set { isAdvancedMode = (newValue == .pro) }
+    }
+}

@@ -5,6 +5,7 @@ struct InstalledProductRowView: View {
     let product: Product
     let installMode: InstallMode?
     let status: ProductSkillStatus
+    var showAdvancedMode: Bool = true
     
     var body: some View {
         HStack(spacing: 16) {
@@ -42,8 +43,7 @@ struct InstalledProductRowView: View {
                         icon: status.isEnabled ? "checkmark.circle.fill" : "pause.circle.fill"
                     )
                     
-                    // Install Mode Badge
-                    if let mode = installMode {
+                    if showAdvancedMode, let mode = installMode {
                         StatusBadge(
                             text: mode.rawValue.capitalized,
                             color: .blue,
@@ -51,7 +51,7 @@ struct InstalledProductRowView: View {
                         )
                     }
                 } else {
-                    StatusBadge(text: "Not Installed", color: .secondary, icon: "circle.dotted")
+                    StatusBadge(text: "Not Deployed", color: .secondary, icon: "circle.dotted")
                 }
             }
         }

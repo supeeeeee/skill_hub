@@ -73,28 +73,15 @@ extension CLI {
             throw SkillHubError.invalidManifest("Schema validation failed: \(validationErrors.joined(separator: ", "))")
         }
 
-        try store.upsertSkill(manifest: manifest, manifestPath: sourcePath)
-        print("Added skill \(manifest.id) from \(source)")
+        try store.addSkill(manifest: manifest, manifestPath: sourcePath)
+        let sourceDirectory = URL(fileURLWithPath: sourcePath).deletingLastPathComponent()
+        let preparedPath = try prepareSkillInStore(skillID: manifest.id, sourceDirectory: sourceDirectory)
+        print("Added skill \(manifest.id) from \(source). preparedPath=\(preparedPath.path)")
     }
 
-    func stage(arguments: [String]) throws {
-        guard let manifestPath = arguments.first else {
-            throw SkillHubError.invalidManifest("Usage: stage <manifest-path>")
-        }
-
-        let manifestURL = Self.expandPath(manifestPath)
-        let manifestData = try Data(contentsOf: manifestURL)
-        let manifest = try JSONDecoder().decode(SkillManifest.self, from: manifestData)
-        let sourceDirectory = manifestURL.deletingLastPathComponent()
-
-        let validationErrors = SchemaValidator.shared.validateManifestData(manifestData)
-        if !validationErrors.isEmpty {
-            throw SkillHubError.invalidManifest("Schema validation failed: \(validationErrors.joined(separator: ", "))")
-        }
-
-        try store.upsertSkill(manifest: manifest, manifestPath: manifestURL.path)
-        let stagedPath = try stageSkillInStore(skillID: manifest.id, sourceDirectory: sourceDirectory)
-        print("Staged \(manifest.id) at \(stagedPath.path)")
+    func addFromLegacyStage(arguments: [String]) throws {
+        print("Warning: 'stage' is deprecated. Use 'add' instead.")
+        try add(arguments: arguments)
     }
 
     func unstage(arguments: [String]) throws {
@@ -102,18 +89,22 @@ extension CLI {
             throw SkillHubError.invalidManifest("Usage: unstage <skill-id>")
         }
 
-        let stagedPath = stagedSkillPath(skillID: skillID)
-        if FileManager.default.fileExists(atPath: stagedPath.path) {
-            try FileManager.default.removeItem(at: stagedPath)
-            print("Unstaged \(skillID) from \(stagedPath.path)")
+        let preparedPath = preparedSkillPath(skillID: skillID)
+        if FileManager.default.fileExists(atPath: preparedPath.path) {
+            try FileManager.default.removeItem(at: preparedPath)
+            print("Removed prepared files for \(skillID) from \(preparedPath.path)")
         } else {
-            print("No staged directory found for \(skillID)")
+            print("No prepared directory found for \(skillID)")
         }
     }
 
-    func install(arguments: [String]) throws {
+    func deploy(arguments: [String], legacyAlias: Bool = false) throws {
+        if legacyAlias {
+            print("Warning: 'install' is deprecated. Use 'deploy' instead.")
+        }
+
         guard arguments.count >= 2 else {
-            throw SkillHubError.invalidManifest("Usage: install <skill-id> <product-id> [--mode auto|symlink|copy|configPatch]")
+            throw SkillHubError.invalidManifest("Usage: deploy <skill-id> <product-id> [--mode auto|symlink|copy|configPatch]")
         }
 
         let skillID = arguments[0]
@@ -137,15 +128,15 @@ extension CLI {
             throw SkillHubError.adapterEnvironmentInvalid("\(detection.reason). Run: doctor")
         }
 
-        let stagedPath = stagedSkillPath(skillID: skillID)
-        guard FileManager.default.fileExists(atPath: stagedPath.path) else {
-            throw SkillHubError.invalidManifest("Skill is not staged: \(stagedPath.path). Run: stage \(skillRecord.manifestPath) or apply \(skillRecord.manifestPath) \(productID)")
+        let preparedPath = preparedSkillPath(skillID: skillID)
+        guard FileManager.default.fileExists(atPath: preparedPath.path) else {
+            throw SkillHubError.invalidManifest("Skill is not prepared: \(preparedPath.path). Run: add \(skillRecord.manifestPath) or apply \(skillRecord.manifestPath) \(productID)")
         }
 
         let chosenMode = try adapter.install(skill: skillRecord.manifest, mode: mode)
 
-        try store.markInstalled(skillID: skillID, productID: productID, installMode: chosenMode)
-        print("Installed \(skillID) for \(productID). requestedMode=\(mode.rawValue) chosenMode=\(chosenMode.rawValue) stagedPath=\(stagedPath.path)")
+        try store.markDeployed(skillID: skillID, productID: productID, deployMode: chosenMode)
+        print("Deployed \(skillID) for \(productID). requestedMode=\(mode.rawValue) chosenMode=\(chosenMode.rawValue) preparedPath=\(preparedPath.path)")
     }
 
     func apply(arguments: [String]) throws {
@@ -175,8 +166,8 @@ extension CLI {
                 throw SkillHubError.invalidManifest("Schema validation failed: \(validationErrors.joined(separator: ", "))")
             }
 
-            print("[1/5] Registering skill \(manifest.id) from \(manifestURL.path)")
-            try store.upsertSkill(manifest: manifest, manifestPath: manifestURL.path)
+            print("[1/5] Adding skill \(manifest.id) from \(manifestURL.path)")
+            try store.addSkill(manifest: manifest, manifestPath: manifestURL.path)
         }
 
         let state = try store.loadState()
@@ -190,8 +181,8 @@ extension CLI {
             : Self.expandPath(skillRecord.manifestPath)
 
         let sourceDirectory = manifestURL.deletingLastPathComponent()
-        print("[2/5] Staging \(skillID) from \(sourceDirectory.path)")
-        let stagedPath = try stageSkillInStore(skillID: skillID, sourceDirectory: sourceDirectory)
+        print("[2/5] Preparing \(skillID) from \(sourceDirectory.path)")
+        let preparedPath = try prepareSkillInStore(skillID: skillID, sourceDirectory: sourceDirectory)
 
         let adapter = try adapterRegistry.adapter(for: productID)
         let detection = adapter.detect()
@@ -199,17 +190,17 @@ extension CLI {
             throw SkillHubError.adapterEnvironmentInvalid("\(detection.reason). Run: doctor")
         }
 
-        print("[3/5] Installing \(skillID) into \(productID) (requested mode: \(mode.rawValue))")
+        print("[3/5] Deploying \(skillID) into \(productID) (requested mode: \(mode.rawValue))")
         let chosenMode = try adapter.install(skill: skillRecord.manifest, mode: mode)
 
         print("[4/5] Enabling \(skillID) for \(productID) with mode \(chosenMode.rawValue)")
         try adapter.enable(skillID: skillID, mode: chosenMode)
 
-        print("[5/5] Updating state (installed + enabled)")
-        try store.markInstalled(skillID: skillID, productID: productID, installMode: chosenMode)
+        print("[5/5] Updating state (deployed + enabled)")
+        try store.markDeployed(skillID: skillID, productID: productID, deployMode: chosenMode)
         try store.setEnabled(skillID: skillID, productID: productID, enabled: true)
 
-        print("Applied \(skillID) to \(productID). requestedMode=\(mode.rawValue) chosenMode=\(chosenMode.rawValue) stagedPath=\(stagedPath.path)")
+        print("Applied \(skillID) to \(productID). requestedMode=\(mode.rawValue) chosenMode=\(chosenMode.rawValue) preparedPath=\(preparedPath.path)")
     }
 
     func uninstall(arguments: [String]) throws {
@@ -228,7 +219,7 @@ extension CLI {
 
         try adapter.disable(skillID: skillID)
         try store.markUninstalled(skillID: skillID, productID: productID)
-        print("Uninstalled \(skillID) from \(productID). Staged files kept at \(stagedSkillPath(skillID: skillID).path)")
+        print("Uninstalled \(skillID) from \(productID). Prepared files kept at \(preparedSkillPath(skillID: skillID).path)")
     }
 
     func toggle(arguments: [String], enabled: Bool) throws {
@@ -252,8 +243,8 @@ extension CLI {
             guard let skillRecord = state.skills.first(where: { $0.manifest.id == skillID }) else {
                 throw SkillHubError.invalidManifest("Skill not found: \(skillID)")
             }
-            guard let installedMode = skillRecord.lastInstallModeByProduct[productID] else {
-                throw SkillHubError.invalidManifest("Skill \(skillID) is not installed for \(productID). Run: install \(skillID) \(productID) or apply <manifest-path|skill-id> \(productID)")
+            guard let installedMode = skillRecord.lastDeployModeByProduct[productID] else {
+                throw SkillHubError.invalidManifest("Skill \(skillID) is not deployed for \(productID). Run: deploy \(skillID) \(productID) or apply <manifest-path|skill-id> \(productID)")
             }
             try adapter.enable(skillID: skillID, mode: installedMode)
         } else {
@@ -288,14 +279,16 @@ extension CLI {
                     "version": record.manifest.version,
                     "name": record.manifest.name,
                     "manifestPath": record.manifestPath,
-                    "installedProducts": record.installedProducts,
+                    "deployedProducts": record.deployedProducts,
+                    "installedProducts": record.deployedProducts,
                     "enabledProducts": record.enabledProducts
                 ]
 
                 var modePairs: [String: String] = [:]
-                for (product, mode) in record.lastInstallModeByProduct {
+                for (product, mode) in record.lastDeployModeByProduct {
                     modePairs[product] = mode.rawValue
                 }
+                skillDict["deployModes"] = modePairs
                 skillDict["installModes"] = modePairs
 
                 skillsList.append(skillDict)
@@ -311,20 +304,20 @@ extension CLI {
                 print("Skill: \(record.manifest.id) v\(record.manifest.version)")
                 print("  Name: \(record.manifest.name)")
                 print("  Manifest: \(record.manifestPath)")
-                print("  Installed products: \(record.installedProducts.joined(separator: ", "))")
+                print("  Deployed products: \(record.deployedProducts.joined(separator: ", "))")
                 print("  Enabled products: \(record.enabledProducts.joined(separator: ", "))")
-                if !record.lastInstallModeByProduct.isEmpty {
-                    let modePairs = record.lastInstallModeByProduct
+                if !record.lastDeployModeByProduct.isEmpty {
+                    let modePairs = record.lastDeployModeByProduct
                         .sorted { $0.key < $1.key }
                         .map { "\($0.key)=\($0.value.rawValue)" }
                         .joined(separator: ", ")
-                    print("  Last install modes: \(modePairs)")
+                    print("  Last deploy modes: \(modePairs)")
                 }
 
-                for productID in record.installedProducts {
+                for productID in record.deployedProducts {
                     if let adapter = try? adapterRegistry.adapter(for: productID) {
                         let productStatus = adapter.status(skillID: record.manifest.id)
-                        print("  Product status [\(productID)]: installed=\(productStatus.isInstalled) enabled=\(productStatus.isEnabled) detail=\(productStatus.detail)")
+                        print("  Product status [\(productID)]: deployed=\(productStatus.isInstalled) enabled=\(productStatus.isEnabled) detail=\(productStatus.detail)")
                     }
                 }
             }
@@ -339,13 +332,13 @@ extension CLI {
         let purge = arguments.contains("--purge")
         try store.removeSkill(skillID: skillID)
         if purge {
-            let stagedPath = stagedSkillPath(skillID: skillID)
-            if FileManager.default.fileExists(atPath: stagedPath.path) {
-                try FileManager.default.removeItem(at: stagedPath)
+            let preparedPath = preparedSkillPath(skillID: skillID)
+            if FileManager.default.fileExists(atPath: preparedPath.path) {
+                try FileManager.default.removeItem(at: preparedPath)
             }
         }
 
-        print("Removed skill record \(skillID)\(purge ? " and purged staged files" : "")")
+        print("Removed skill record \(skillID)\(purge ? " and purged prepared files" : "")")
     }
 
     private func fetchOrCloneSkill(source: String) throws -> (SkillManifest, String) {
@@ -452,7 +445,7 @@ extension CLI {
         return (manifest, manifestFile.path)
     }
 
-    private func stageSkillInStore(skillID: String, sourceDirectory: URL) throws -> URL {
+    private func prepareSkillInStore(skillID: String, sourceDirectory: URL) throws -> URL {
         guard FileManager.default.fileExists(atPath: sourceDirectory.path) else {
             throw SkillHubError.invalidManifest("Skill source directory missing: \(sourceDirectory.path)")
         }
@@ -464,7 +457,7 @@ extension CLI {
         return destination
     }
 
-    private func stagedSkillPath(skillID: String) -> URL {
+    private func preparedSkillPath(skillID: String) -> URL {
         SkillHubPaths.defaultSkillsDirectory().appendingPathComponent(skillID, isDirectory: true)
     }
 
