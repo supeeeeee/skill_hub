@@ -87,6 +87,10 @@ public struct InstalledSkillRecord: Codable, Equatable, Identifiable, Sendable {
     public var lastInstallModeByProduct: [String: InstallMode]
     public var hasUpdate: Bool = false
 
+    public func isBound(to productID: String) -> Bool {
+        installedProducts.contains(productID)
+    }
+
     public init(
         manifest: SkillManifest,
         manifestPath: String,

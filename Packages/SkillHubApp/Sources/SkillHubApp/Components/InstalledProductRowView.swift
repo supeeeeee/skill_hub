@@ -5,6 +5,8 @@ struct InstalledProductRowView: View {
     let product: Product
     let installMode: InstallMode?
     let status: ProductSkillStatus
+    var onInstall: (() -> Void)? = nil
+    var onToggle: (() -> Void)? = nil
     
     var body: some View {
         HStack(spacing: 16) {
@@ -41,6 +43,9 @@ struct InstalledProductRowView: View {
                         color: status.isEnabled ? .green : .orange,
                         icon: status.isEnabled ? "checkmark.circle.fill" : "pause.circle.fill"
                     )
+                    .onTapGesture {
+                        onToggle?()
+                    }
                     
                     // Install Mode Badge
                     if let mode = installMode {
@@ -50,8 +55,23 @@ struct InstalledProductRowView: View {
                             icon: iconForMode(mode)
                         )
                     }
+                    
+                    Button(action: { onToggle?() }) {
+                        Image(systemName: status.isEnabled ? "power" : "power")
+                            .foregroundColor(status.isEnabled ? .red : .green)
+                    }
+                    .buttonStyle(.plain)
                 } else {
-                    StatusBadge(text: "Not Installed", color: .secondary, icon: "circle.dotted")
+                    Button(action: { onInstall?() }) {
+                        Text("Install")
+                            .font(.caption)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.accentColor)
+                            .foregroundColor(.white)
+                            .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }

@@ -127,6 +127,51 @@ class SkillHubViewModel: ObservableObject {
         }
     }
     
+    func bulkBindSkill(manifest: SkillManifest, productIDs: [String]) async {
+        log("Bulk binding \(manifest.name) to \(productIDs.count) products...", type: .info)
+        
+        var successCount = 0
+        var failCount = 0
+        
+        for productID in productIDs {
+            // We use the internal logic of installSkill but might want to avoid excessive loadData calls
+            // For now, reusing the existing method is safest to ensure consistency
+            let result = await installSkill(manifest: manifest, productID: productID, mode: .auto)
+            if result.success {
+                successCount += 1
+            } else {
+                failCount += 1
+            }
+        }
+        
+        if failCount == 0 {
+            log("Bulk bind completed: All \(successCount) products bound successfully", type: .success)
+        } else {
+            log("Bulk bind completed: \(successCount) success, \(failCount) failed", type: .info)
+        }
+    }
+    
+    func disableSkillGlobally(manifest: SkillManifest) async {
+        log("Disabling \(manifest.name) on all products...", type: .info)
+        
+        guard let skillRecord = skills.first(where: { $0.id == manifest.id }) else {
+            log("Skill record not found for \(manifest.name)", type: .error)
+            return
+        }
+        
+        let targets = skillRecord.installedProducts
+        if targets.isEmpty {
+            log("No products bound to \(manifest.name)", type: .info)
+            return
+        }
+
+        for productID in targets {
+             await setSkillEnabled(manifest: manifest, productID: productID, enabled: false)
+        }
+        
+        log("Disabled \(manifest.name) on all bound products", type: .success)
+    }
+    
     func uninstallSkill(manifest: SkillManifest, productID: String) async {
         do {
             log("Uninstalling \(manifest.name) from \(productID)...", type: .info)
