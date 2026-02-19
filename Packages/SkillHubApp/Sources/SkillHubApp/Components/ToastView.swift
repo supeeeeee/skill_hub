@@ -36,10 +36,14 @@ struct ToastView: View {
         HStack(spacing: 12) {
             Image(systemName: toast.type.icon)
                 .foregroundColor(toast.type.color)
+                .font(.system(size: 14, weight: .semibold))
+                .frame(width: 20, height: 20)
             
             Text(toast.message)
-                .font(.subheadline)
+                .font(.subheadline.weight(.medium))
                 .foregroundColor(.primary)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
             
             Spacer()
             
@@ -50,14 +54,15 @@ struct ToastView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: 340, alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(8)
-        .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 4)
+        .cornerRadius(10)
+        .shadow(color: Color.black.opacity(0.12), radius: 10, x: 0, y: 4)
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(toast.type.color.opacity(0.3), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(toast.type.color.opacity(0.22), lineWidth: 1)
         )
     }
 }

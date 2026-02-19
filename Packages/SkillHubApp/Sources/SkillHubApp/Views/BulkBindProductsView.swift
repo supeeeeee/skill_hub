@@ -51,7 +51,7 @@ struct BatchManagementView: View {
                     actionBar
                 }
             }
-            .navigationTitle("Batch Management")
+            .navigationTitle("Install to Products")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
@@ -163,7 +163,7 @@ struct BatchManagementView: View {
                         .fontWeight(.bold) +
                     Text(" selected")
                 } else {
-                    Text("Select products to continue")
+                    Text("Select products to manage")
                         .foregroundColor(.secondary)
                 }
                 
@@ -173,7 +173,7 @@ struct BatchManagementView: View {
                     Button(role: .destructive) {
                         performBatchAction(isInstall: false)
                     } label: {
-                        Text("Disable Selected")
+                        Text("Uninstall Selected")
                             .frame(minWidth: 100)
                     }
                     .controlSize(.large)
@@ -182,7 +182,7 @@ struct BatchManagementView: View {
                     Button {
                         performBatchAction(isInstall: true)
                     } label: {
-                        Text("Enable Selected")
+                        Text("Install or Enable Selected")
                             .frame(minWidth: 100)
                     }
                     .buttonStyle(.borderedProminent)
@@ -312,7 +312,7 @@ struct BatchProductRow: View {
             )
             .foregroundColor(isEnabled ? .green : .orange)
         } else {
-            Text("Not Bound")
+            Text("Not Installed")
                 .font(.caption)
                 .fontWeight(.medium)
                 .padding(.horizontal, 8)

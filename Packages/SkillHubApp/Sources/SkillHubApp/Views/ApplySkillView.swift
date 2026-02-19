@@ -34,7 +34,7 @@ struct ApplySkillView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Install \(skill.manifest.name)")
                     .font(.title2.weight(.semibold))
-                Text("Copy mode only: the skill files will be installed as a local copy.")
+                Text("Skill files will be installed as a local copy.")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
@@ -57,13 +57,6 @@ struct ApplySkillView: View {
                     }
                 }
 
-                HStack {
-                    Text("Install mode")
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text("Copy")
-                        .fontWeight(.medium)
-                }
             }
             .padding(14)
             .background(

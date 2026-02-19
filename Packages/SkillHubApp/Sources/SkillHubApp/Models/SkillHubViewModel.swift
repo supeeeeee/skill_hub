@@ -80,13 +80,66 @@ class SkillHubViewModel: ObservableObject {
     }
     
     func showToast(message: String, type: ToastType) {
-        let toast = Toast(message: message, type: type)
+        let compactMessage = compactToastMessage(message, type: type)
+        let toast = Toast(message: compactMessage, type: type)
         toasts.append(toast)
         
         // Auto dismiss after 3 seconds
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             self.toasts.removeAll { $0.id == toast.id }
         }
+    }
+
+    private func compactToastMessage(_ message: String, type: ToastType) -> String {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return message
+        }
+
+        let normalized: String
+        switch type {
+        case .success:
+            if let parsed = parseInstalledMessage(trimmed) {
+                normalized = "Installed \(parsed.skill) on \(parsed.product)"
+            } else if let parsed = parseEnabledMessage(trimmed) {
+                normalized = "Enabled \(parsed.skill) on \(parsed.product)"
+            } else {
+                normalized = trimmed.replacingOccurrences(of: "Successfully ", with: "")
+            }
+        case .error:
+            normalized = trimmed.replacingOccurrences(of: "Error ", with: "")
+        case .info:
+            normalized = trimmed
+        }
+
+        if normalized.count <= 90 {
+            return normalized
+        }
+        return String(normalized.prefix(87)) + "..."
+    }
+
+    private func parseInstalledMessage(_ message: String) -> (skill: String, product: String)? {
+        let prefix = "Successfully installed and enabled "
+        guard message.hasPrefix(prefix) else { return nil }
+        let body = String(message.dropFirst(prefix.count))
+        let separator = " for "
+        guard let range = body.range(of: separator) else { return nil }
+        let skill = String(body[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let product = String(body[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !skill.isEmpty, !product.isEmpty else { return nil }
+        return (skill, product)
+    }
+
+    private func parseEnabledMessage(_ message: String) -> (skill: String, product: String)? {
+        let prefix = "Enabled "
+        guard message.hasPrefix(prefix) else { return nil }
+        let body = String(message.dropFirst(prefix.count))
+        let separator = " for "
+        guard let range = body.range(of: separator) else { return nil }
+        let skill = String(body[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let product = String(body[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !skill.isEmpty, !product.isEmpty else { return nil }
+        return (skill, product)
     }
     
     func importSkill(at url: URL) {
@@ -139,7 +192,7 @@ class SkillHubViewModel: ObservableObject {
     }
     
     func bulkBindSkill(manifest: SkillManifest, productIDs: [String]) async {
-        log("Bulk binding \(manifest.name) to \(productIDs.count) products...", type: .info)
+        log("Installing \(manifest.name) on \(productIDs.count) products...", type: .info)
         
         var successCount = 0
         var failCount = 0
@@ -156,9 +209,9 @@ class SkillHubViewModel: ObservableObject {
         }
         
         if failCount == 0 {
-            log("Bulk bind completed: All \(successCount) products bound successfully", type: .success)
+            log("Install completed: \(successCount) products updated", type: .success)
         } else {
-            log("Bulk bind completed: \(successCount) success, \(failCount) failed", type: .info)
+            log("Install completed: \(successCount) success, \(failCount) failed", type: .info)
         }
     }
     

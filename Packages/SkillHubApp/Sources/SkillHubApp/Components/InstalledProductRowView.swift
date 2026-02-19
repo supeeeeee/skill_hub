@@ -3,7 +3,6 @@ import SkillHubCore
 
 struct InstalledProductRowView: View {
     let product: Product
-    let installMode: InstallMode?
     let status: ProductSkillStatus
     var onInstall: (() -> Void)? = nil
     var onToggle: (() -> Void)? = nil
@@ -47,15 +46,6 @@ struct InstalledProductRowView: View {
                         onToggle?()
                     }
                     
-                    // Install Mode Badge
-                    if let mode = installMode {
-                        StatusBadge(
-                            text: mode.rawValue.capitalized,
-                            color: .blue,
-                            icon: iconForMode(mode)
-                        )
-                    }
-                    
                     Button(action: { onToggle?() }) {
                         Image(systemName: status.isEnabled ? "power" : "power")
                             .foregroundColor(status.isEnabled ? .red : .green)
@@ -84,15 +74,6 @@ struct InstalledProductRowView: View {
         )
     }
     
-    private func iconForMode(_ mode: InstallMode) -> String {
-        switch mode {
-        case .symlink: return "link"
-        case .copy: return "doc.on.doc"
-        case .configPatch: return "gearshape"
-        case .auto: return "sparkles"
-        default: return "questionmark"
-        }
-    }
 }
 
 struct StatusBadge: View {

@@ -38,12 +38,6 @@ struct ProductCardView: View {
             
             VStack(alignment: .trailing, spacing: 4) {
                 StatusBadgeView(status: product.status)
-                
-                HStack(spacing: 4) {
-                    ForEach(product.supportedModes, id: \.self) { mode in
-                        ModePillView(mode: mode)
-                    }
-                }
             }
         }
         .padding()
@@ -84,19 +78,5 @@ struct StatusBadgeView: View {
         case .notInstalled: return .gray
         case .error: return .red
         }
-    }
-}
-
-struct ModePillView: View {
-    let mode: InstallMode
-    
-    var body: some View {
-        Text(mode.rawValue.uppercased())
-            .font(.system(size: 8, weight: .bold))
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
-            .background(Color.blue.opacity(0.1))
-            .foregroundColor(.blue)
-            .cornerRadius(4)
     }
 }

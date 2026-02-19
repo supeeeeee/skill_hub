@@ -53,7 +53,7 @@ struct SkillDetailView: View {
                 // Actions Toolbar
                 HStack(spacing: 16) {
                     Button(action: { showingBatchManagement = true }) {
-                        Label("Batch Add Products", systemImage: "plus.square.on.square")
+                        Label("Install to Products", systemImage: "plus.square.on.square")
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
                     }
@@ -83,7 +83,7 @@ struct SkillDetailView: View {
                             Text("No products detected")
                                 .font(.headline)
                                 .foregroundColor(.secondary)
-                            Text("Install products locally to bind skills to them.")
+                            Text("Install products locally to install this skill.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -96,11 +96,9 @@ struct SkillDetailView: View {
                             ForEach(hubViewModel.products) { product in
                                 if let adapter = try? hubViewModel.adapterRegistry.adapter(for: product.id) {
                                     let status = adapter.status(skillID: detailViewModel.skill.manifest.id)
-                                    let installMode = detailViewModel.skill.lastInstallModeByProduct[product.id]
-                                    
+                                     
                                     InstalledProductRowView(
                                         product: product,
-                                        installMode: installMode,
                                         status: status,
                                         onInstall: {
                                             Task {
