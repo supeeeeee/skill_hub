@@ -2,6 +2,12 @@ import Foundation
 import SkillHubCore
 
 final class SkillService {
+    private struct SkillHubCommand {
+        let executablePath: String
+        let prefixArguments: [String]
+        let displayName: String
+    }
+
     let skillStore: SkillStore
     let adapterRegistry: AdapterRegistry
 
@@ -213,13 +219,13 @@ final class SkillService {
     }
 
     private func runSkillHub(arguments: [String], action: String) throws {
-        let cliPath = try findSkillHubCLI()
+        let command = try resolveSkillHubCommand()
         let process = Process()
         let outputPipe = Pipe()
         let errorPipe = Pipe()
 
-        process.executableURL = URL(fileURLWithPath: cliPath)
-        process.arguments = arguments
+        process.executableURL = URL(fileURLWithPath: command.executablePath)
+        process.arguments = command.prefixArguments + arguments
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
@@ -227,7 +233,7 @@ final class SkillService {
             try process.run()
         } catch {
             throw SkillHubError.invalidManifest(
-                "Failed to \(action): unable to launch skillhub at \(cliPath). \(error.localizedDescription)"
+                "Failed to \(action): unable to launch command \(command.displayName). \(error.localizedDescription)"
             )
         }
 
@@ -247,7 +253,7 @@ final class SkillService {
             let detailSuffix = details.isEmpty ? "" : ". " + details.joined(separator: " | ")
 
             throw SkillHubError.invalidManifest(
-                "Failed to \(action) (exit code: \(process.terminationStatus), cli: \(cliPath), args: \(arguments))\(detailSuffix)"
+                "Failed to \(action) (exit code: \(process.terminationStatus), command: \(command.displayName), args: \(arguments))\(detailSuffix)"
             )
         }
     }
@@ -296,46 +302,142 @@ final class SkillService {
         (path as NSString).expandingTildeInPath
     }
 
-    private func findSkillHubCLI() throws -> String {
+    private func resolveSkillHubCommand() throws -> SkillHubCommand {
+        if let binaryPath = findSkillHubBinary() {
+            return SkillHubCommand(
+                executablePath: binaryPath,
+                prefixArguments: [],
+                displayName: binaryPath
+            )
+        }
+
+        if let packagePath = findLocalCLIPath(),
+           let swiftPath = findSwiftExecutablePath()
+        {
+            let prefixArguments = ["run", "--package-path", packagePath, "skillhub"]
+            return SkillHubCommand(
+                executablePath: swiftPath,
+                prefixArguments: prefixArguments,
+                displayName: ([swiftPath] + prefixArguments).joined(separator: " ")
+            )
+        }
+
+        throw SkillHubError.invalidManifest(
+            "Could not locate executable 'skillhub' and no local SkillHubCLI package was found for 'swift run'. Build SkillHubCLI first, add it to PATH, or set SKILLHUB_CLI_PATH to the CLI binary path."
+        )
+    }
+
+    private func findSkillHubBinary() -> String? {
         let fm = Foundation.FileManager()
-        let cwd = URL(fileURLWithPath: ".").standardizedFileURL.path
-        var paths = [
+        var candidates: [String] = []
+
+        if let overridePath = ProcessInfo.processInfo.environment["SKILLHUB_CLI_PATH"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !overridePath.isEmpty
+        {
+            candidates.append((overridePath as NSString).expandingTildeInPath)
+        }
+
+        candidates.append(contentsOf: [
             "/usr/local/bin/skillhub",
             "/opt/homebrew/bin/skillhub",
             "~/.local/bin/skillhub",
             "skillhub"
-        ]
-
-        if let executableURL = Bundle.main.executableURL {
-            let executableDir = executableURL.deletingLastPathComponent().path
-            paths.append("\(executableDir)/skillhub")
-            paths.append("\(executableDir)/../skillhub")
-        }
-
-        paths.append(contentsOf: [
-            "\(cwd)/.build/debug/skillhub",
-            "\(cwd)/.build/arm64-apple-macosx/debug/skillhub",
-            "\(cwd)/Packages/SkillHubCLI/.build/debug/skillhub",
-            "\(cwd)/Packages/SkillHubCLI/.build/arm64-apple-macosx/debug/skillhub"
         ])
 
-        for path in paths {
+        for root in searchRoots() {
+            candidates.append(contentsOf: [
+                "\(root)/.build/debug/skillhub",
+                "\(root)/.build/arm64-apple-macosx/debug/skillhub",
+                "\(root)/Packages/SkillHubCLI/.build/debug/skillhub",
+                "\(root)/Packages/SkillHubCLI/.build/arm64-apple-macosx/debug/skillhub",
+                "\(root)/SkillHubCLI/.build/debug/skillhub",
+                "\(root)/SkillHubCLI/.build/arm64-apple-macosx/debug/skillhub"
+            ])
+        }
+
+        var visited = Set<String>()
+        for path in candidates {
             let expanded = (path as NSString).expandingTildeInPath
+            guard visited.insert(expanded).inserted else {
+                continue
+            }
+
             if expanded == "skillhub" {
                 if let resolved = resolveFromPATH(binary: expanded) {
-                    return resolved
+                    return (resolved as NSString).expandingTildeInPath
                 }
                 continue
             }
 
             if fm.isExecutableFile(atPath: expanded) {
-                return expanded
+                return (expanded as NSString).expandingTildeInPath
             }
         }
 
-        throw SkillHubError.invalidManifest(
-            "Could not locate executable 'skillhub'. Build SkillHubCLI first or add it to PATH."
-        )
+        return nil
+    }
+
+    private func searchRoots() -> [String] {
+        var roots: [String] = []
+        var seen = Set<String>()
+
+        func append(_ path: String) {
+            let normalized = URL(fileURLWithPath: path).standardizedFileURL.path
+            if seen.insert(normalized).inserted {
+                roots.append(normalized)
+            }
+        }
+
+        append(URL(fileURLWithPath: ".").standardizedFileURL.path)
+
+        if let executableURL = Bundle.main.executableURL {
+            var cursor = executableURL.deletingLastPathComponent()
+            for _ in 0..<10 {
+                append(cursor.path)
+                let parent = cursor.deletingLastPathComponent()
+                if parent.path == cursor.path {
+                    break
+                }
+                cursor = parent
+            }
+        }
+
+        return roots
+    }
+
+    private func findLocalCLIPath() -> String? {
+        let fm = Foundation.FileManager()
+
+        for root in searchRoots() {
+            let packageCandidates = [
+                URL(fileURLWithPath: root).appendingPathComponent("Packages/SkillHubCLI", isDirectory: true),
+                URL(fileURLWithPath: root).appendingPathComponent("SkillHubCLI", isDirectory: true)
+            ]
+
+            for candidate in packageCandidates {
+                let packageFile = candidate.appendingPathComponent("Package.swift")
+                if fm.fileExists(atPath: packageFile.path) {
+                    return candidate.path
+                }
+            }
+        }
+
+        return nil
+    }
+
+    private func findSwiftExecutablePath() -> String? {
+        let fm = Foundation.FileManager()
+        let preferred = [
+            "/usr/bin/swift",
+            "/usr/local/bin/swift",
+            "/opt/homebrew/bin/swift"
+        ]
+
+        for path in preferred where fm.isExecutableFile(atPath: path) {
+            return path
+        }
+
+        return resolveFromPATH(binary: "swift")
     }
 
     private func resolveFromPATH(binary: String) -> String? {

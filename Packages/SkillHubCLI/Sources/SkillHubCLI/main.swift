@@ -193,15 +193,15 @@ struct CLI {
           products                        List known product adapters
           detect | doctor                 Show detection status for known products [--json]
           skills                          List registered skills
-          add <source>                    Register or update a skill from skill.json (local path, URL, or git repo)
-          stage <skill.json-path>         Register and copy skill directory into ~/.skillhub/skills/<id>
+          add <source>                    Register or update an Agent Skill from SKILL.md (local dir/file, URL, or git repo)
+          stage <source|skill-id>         Register if needed and copy skill directory into ~/.skillhub/skills/<id>
           unstage <skill-id>              Remove staged skill directory from ~/.skillhub/skills
           install <skill-id> <product-id> [--mode auto|symlink|copy|configPatch]
                                              Validate staged skill and record install mode
-          apply <skill.json|skill-id> <product-id> [--mode auto|symlink|copy|configPatch]
-                                            Register/stage/install/enable in one command
-          setup <skill.json|skill-id> <product-id> [--mode auto|symlink|copy|configPatch]
-                                            Register/stage/install/enable in one command
+          apply <source|skill-id> <product-id> [--mode auto|symlink|copy|configPatch]
+                                             Register/stage/install/enable in one command
+          setup <source|skill-id> <product-id> [--mode auto|symlink|copy|configPatch]
+                                             Register/stage/install/enable in one command
           uninstall <skill-id> <product-id>
                                              Disable skill and remove product installation state
           enable <skill-id> <product-id>  Enable a skill for a product

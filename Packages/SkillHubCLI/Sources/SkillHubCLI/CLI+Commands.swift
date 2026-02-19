@@ -66,11 +66,10 @@ extension CLI {
             throw SkillHubError.invalidManifest("Usage: add <source>")
         }
 
-        let (manifest, sourcePath) = try fetchOrCloneSkill(source: source)
-        let manifestBytes = (try? Data(contentsOf: URL(fileURLWithPath: sourcePath))) ?? Data()
-        let validationErrors = SchemaValidator.shared.validateManifestData(manifestBytes)
+        let (manifest, sourcePath) = try resolveAgentSkill(source: source)
+        let validationErrors = SchemaValidator.shared.validate(manifest)
         if !validationErrors.isEmpty {
-            throw SkillHubError.invalidManifest("Schema validation failed: \(validationErrors.joined(separator: ", "))")
+            throw SkillHubError.invalidManifest("Manifest validation failed: \(validationErrors.joined(separator: ", "))")
         }
 
         try store.upsertSkill(manifest: manifest, manifestPath: sourcePath)
@@ -78,21 +77,28 @@ extension CLI {
     }
 
     func stage(arguments: [String]) throws {
-        guard let manifestPath = arguments.first else {
-            throw SkillHubError.invalidManifest("Usage: stage <manifest-path>")
+        guard let source = arguments.first else {
+            throw SkillHubError.invalidManifest("Usage: stage <source|skill-id>")
         }
 
-        let manifestURL = Self.expandPath(manifestPath)
-        let manifestData = try Data(contentsOf: manifestURL)
-        let manifest = try JSONDecoder().decode(SkillManifest.self, from: manifestData)
-        let sourceDirectory = manifestURL.deletingLastPathComponent()
+        let state = try store.loadState()
+        let manifest: SkillManifest
+        let sourceDirectory: URL
 
-        let validationErrors = SchemaValidator.shared.validateManifestData(manifestData)
-        if !validationErrors.isEmpty {
-            throw SkillHubError.invalidManifest("Schema validation failed: \(validationErrors.joined(separator: ", "))")
+        if let existing = state.skills.first(where: { $0.manifest.id == source }) {
+            manifest = existing.manifest
+            sourceDirectory = Self.expandPath(existing.manifestPath).deletingLastPathComponent()
+        } else {
+            let (resolvedManifest, resolvedPath) = try resolveAgentSkill(source: source)
+            let validationErrors = SchemaValidator.shared.validate(resolvedManifest)
+            if !validationErrors.isEmpty {
+                throw SkillHubError.invalidManifest("Manifest validation failed: \(validationErrors.joined(separator: ", "))")
+            }
+            manifest = resolvedManifest
+            sourceDirectory = URL(fileURLWithPath: resolvedPath).deletingLastPathComponent()
+            try store.upsertSkill(manifest: manifest, manifestPath: resolvedPath)
         }
 
-        try store.upsertSkill(manifest: manifest, manifestPath: manifestURL.path)
         let stagedPath = try stageSkillInStore(skillID: manifest.id, sourceDirectory: sourceDirectory)
         print("Staged \(manifest.id) at \(stagedPath.path)")
     }
@@ -150,7 +156,7 @@ extension CLI {
 
     func apply(arguments: [String]) throws {
         guard arguments.count >= 2 else {
-            throw SkillHubError.invalidManifest("Usage: apply <manifest-path|skill-id> <product-id> [--mode auto|symlink|copy|configPatch]")
+            throw SkillHubError.invalidManifest("Usage: apply <source|skill-id> <product-id> [--mode auto|symlink|copy|configPatch]")
         }
 
         let firstArgument = arguments[0]
@@ -163,31 +169,27 @@ extension CLI {
             mode = .auto
         }
 
-        let isManifestPathInput = firstArgument.lowercased().hasSuffix(".json")
+        let stateBefore = try store.loadState()
+        var skillID = firstArgument
 
-        if isManifestPathInput {
-            let manifestURL = Self.expandPath(firstArgument)
-            let manifestData = try Data(contentsOf: manifestURL)
-            let manifest = try JSONDecoder().decode(SkillManifest.self, from: manifestData)
-
-            let validationErrors = SchemaValidator.shared.validateManifestData(manifestData)
+        if stateBefore.skills.first(where: { $0.manifest.id == firstArgument }) == nil {
+            let (manifest, sourcePath) = try resolveAgentSkill(source: firstArgument)
+            let validationErrors = SchemaValidator.shared.validate(manifest)
             if !validationErrors.isEmpty {
-                throw SkillHubError.invalidManifest("Schema validation failed: \(validationErrors.joined(separator: ", "))")
+                throw SkillHubError.invalidManifest("Manifest validation failed: \(validationErrors.joined(separator: ", "))")
             }
 
-            print("[1/5] Registering skill \(manifest.id) from \(manifestURL.path)")
-            try store.upsertSkill(manifest: manifest, manifestPath: manifestURL.path)
+            print("[1/5] Registering skill \(manifest.id) from \(firstArgument)")
+            try store.upsertSkill(manifest: manifest, manifestPath: sourcePath)
+            skillID = manifest.id
         }
 
         let state = try store.loadState()
-        let skillID = isManifestPathInput ? try skillIDFromManifestPath(firstArgument) : firstArgument
         guard let skillRecord = state.skills.first(where: { $0.manifest.id == skillID }) else {
             throw SkillHubError.invalidManifest("Skill not found: \(skillID)")
         }
 
-        let manifestURL = isManifestPathInput
-            ? Self.expandPath(firstArgument)
-            : Self.expandPath(skillRecord.manifestPath)
+        let manifestURL = Self.expandPath(skillRecord.manifestPath)
 
         let sourceDirectory = manifestURL.deletingLastPathComponent()
         print("[2/5] Staging \(skillID) from \(sourceDirectory.path)")
@@ -253,7 +255,7 @@ extension CLI {
                 throw SkillHubError.invalidManifest("Skill not found: \(skillID)")
             }
             guard let installedMode = skillRecord.lastInstallModeByProduct[productID] else {
-                throw SkillHubError.invalidManifest("Skill \(skillID) is not installed for \(productID). Run: install \(skillID) \(productID) or apply <manifest-path|skill-id> \(productID)")
+                throw SkillHubError.invalidManifest("Skill \(skillID) is not installed for \(productID). Run: install \(skillID) \(productID) or apply <source|skill-id> \(productID)")
             }
             try adapter.enable(skillID: skillID, mode: installedMode)
         } else {
@@ -348,35 +350,48 @@ extension CLI {
         print("Removed skill record \(skillID)\(purge ? " and purged staged files" : "")")
     }
 
-    private func fetchOrCloneSkill(source: String) throws -> (SkillManifest, String) {
+    private func resolveAgentSkill(source: String) throws -> (SkillManifest, String) {
         if let githubTree = parseGitHubTreeURL(source) {
-            return try cloneFromGit(sourceURL: githubTree.cloneURL, branch: githubTree.branch, preferredSubpath: githubTree.subpath, originalSource: source)
+            let root = try cloneFromGit(sourceURL: githubTree.cloneURL, branch: githubTree.branch, preferredSubpath: githubTree.subpath, originalSource: source)
+            return try loadAgentSkillFromDirectory(root, originalSource: source)
         }
 
         if source.hasPrefix("git@") || source.hasSuffix(".git") {
-            return try cloneFromGit(sourceURL: source, branch: nil, preferredSubpath: nil, originalSource: source)
+            let root = try cloneFromGit(sourceURL: source, branch: nil, preferredSubpath: nil, originalSource: source)
+            return try loadAgentSkillFromDirectory(root, originalSource: source)
         }
 
         if let url = URL(string: source),
            let host = url.host,
            host.contains("github.com")
         {
-            return try cloneFromGit(sourceURL: source, branch: nil, preferredSubpath: nil, originalSource: source)
+            let root = try cloneFromGit(sourceURL: source, branch: nil, preferredSubpath: nil, originalSource: source)
+            return try loadAgentSkillFromDirectory(root, originalSource: source)
         }
 
         if source.hasPrefix("http://") || source.hasPrefix("https://") {
-            return try fetchFromURL(source)
+            return try loadAgentSkillFromURL(source)
         }
 
-        let manifestURL = Self.expandPath(source)
-        let manifestData = try Data(contentsOf: manifestURL)
-        let manifest = try JSONDecoder().decode(SkillManifest.self, from: manifestData)
-        return (manifest, manifestURL.path)
+        let localURL = Self.expandPath(source)
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: localURL.path, isDirectory: &isDirectory), isDirectory.boolValue {
+            return try loadAgentSkillFromDirectory(localURL, originalSource: source)
+        }
+
+        guard localURL.lastPathComponent.lowercased() == "skill.md" else {
+            throw SkillHubError.invalidManifest("Source must be an Agent Skill directory containing SKILL.md or a SKILL.md file")
+        }
+        return try loadAgentSkillFromMarkdown(localURL)
     }
 
-    private func fetchFromURL(_ urlString: String) throws -> (SkillManifest, String) {
+    private func loadAgentSkillFromURL(_ urlString: String) throws -> (SkillManifest, String) {
         guard let url = URL(string: urlString) else {
             throw SkillHubError.invalidManifest("Invalid URL: \(urlString)")
+        }
+
+        guard url.path.lowercased().hasSuffix("/skill.md") else {
+            throw SkillHubError.invalidManifest("HTTP source must point to a raw SKILL.md file, or use a git/tree source")
         }
 
         print("Fetching \(urlString)...")
@@ -400,18 +415,18 @@ extension CLI {
             throw SkillHubError.invalidManifest("No data received from \(urlString)")
         }
 
-        let manifest = try JSONDecoder().decode(SkillManifest.self, from: data)
-
-        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("skillhub-fetch-\(manifest.id)")
+        let inferredSkillDirectory = url.deletingLastPathComponent().lastPathComponent
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent("skillhub-fetch-\(UUID().uuidString)")
+        let tempDir = tempRoot.appendingPathComponent(inferredSkillDirectory.isEmpty ? "imported-skill" : inferredSkillDirectory)
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        let manifestPath = tempDir.appendingPathComponent("skill.json")
-        try data.write(to: manifestPath)
+        let skillMarkdownPath = tempDir.appendingPathComponent("SKILL.md")
+        try data.write(to: skillMarkdownPath)
 
-        print("Downloaded skill manifest to \(tempDir.path)")
-        return (manifest, manifestPath.path)
+        print("Downloaded skill markdown to \(tempDir.path)")
+        return try loadAgentSkillFromMarkdown(skillMarkdownPath)
     }
 
-    private func cloneFromGit(sourceURL: String, branch: String?, preferredSubpath: String?, originalSource: String) throws -> (SkillManifest, String) {
+    private func cloneFromGit(sourceURL: String, branch: String?, preferredSubpath: String?, originalSource: String) throws -> URL {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("skillhub-git-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
@@ -456,14 +471,8 @@ extension CLI {
             searchRoot = tempDir
         }
 
-        guard let manifestFile = locateManifestFile(in: searchRoot) else {
-            throw SkillHubError.invalidManifest("No supported manifest found in source: \(originalSource). Expected one of: skill.json, manifest.json, SKILL.md")
-        }
-
-        let (manifest, manifestPath) = try loadManifestAndPath(from: manifestFile)
-
-        print("Cloned skill \(manifest.id) to \(tempDir.path)")
-        return (manifest, manifestPath)
+        print("Cloned source to \(tempDir.path)")
+        return searchRoot
     }
 
     private func parseGitHubTreeURL(_ source: String) -> (cloneURL: String, branch: String, subpath: String)? {
@@ -487,8 +496,8 @@ extension CLI {
         return (cloneURL, branch, subpath)
     }
 
-    private func locateManifestFile(in root: URL) -> URL? {
-        let preferredNames = ["skill.json", "manifest.json", "SKILL.md", "skill.md"]
+    private func locateSkillMarkdown(in root: URL) throws -> URL {
+        let preferredNames = ["SKILL.md", "skill.md"]
         let fm = FileManager.default
 
         for name in preferredNames {
@@ -503,112 +512,127 @@ extension CLI {
             includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles]
         ) else {
-            return nil
+            throw SkillHubError.invalidManifest("Could not read skill directory: \(root.path)")
         }
 
-        var best: (url: URL, depth: Int, priority: Int)?
+        var matches: [URL] = []
         for case let fileURL as URL in enumerator {
             let name = fileURL.lastPathComponent
-            guard let priority = preferredNames.firstIndex(of: name) else {
+            guard preferredNames.contains(name) else {
                 continue
             }
 
-            let depth = fileURL.pathComponents.count
-            if let currentBest = best {
-                if depth < currentBest.depth || (depth == currentBest.depth && priority < currentBest.priority) {
-                    best = (fileURL, depth, priority)
-                }
-            } else {
-                best = (fileURL, depth, priority)
-            }
+            matches.append(fileURL)
         }
 
-        return best?.url
-    }
-
-    private func loadManifestAndPath(from manifestFile: URL) throws -> (SkillManifest, String) {
-        let fileName = manifestFile.lastPathComponent.lowercased()
-        if fileName == "skill.md" {
-            return try synthesizeManifestFromSkillMarkdown(at: manifestFile)
+        if matches.isEmpty {
+            throw SkillHubError.invalidManifest("No SKILL.md found in source: \(root.path)")
         }
 
-        let data = try Data(contentsOf: manifestFile)
-        let manifest = try JSONDecoder().decode(SkillManifest.self, from: data)
-        return (manifest, manifestFile.path)
+        if matches.count > 1 {
+            let listed = matches.map(\.path).sorted().joined(separator: ", ")
+            throw SkillHubError.invalidManifest("Multiple SKILL.md files found. Provide a specific skill directory (for GitHub use /tree/<branch>/<path>): \(listed)")
+        }
+
+        return matches[0]
     }
 
-    private func synthesizeManifestFromSkillMarkdown(at markdownURL: URL) throws -> (SkillManifest, String) {
+    private func loadAgentSkillFromDirectory(_ directory: URL, originalSource: String) throws -> (SkillManifest, String) {
+        let skillMarkdown = try locateSkillMarkdown(in: directory)
+        let loaded = try loadAgentSkillFromMarkdown(skillMarkdown)
+        print("Resolved Agent Skill \(loaded.0.id) from \(originalSource)")
+        return loaded
+    }
+
+    private func loadAgentSkillFromMarkdown(_ markdownURL: URL) throws -> (SkillManifest, String) {
         let markdown = try String(contentsOf: markdownURL, encoding: .utf8)
-        let parentDirectory = markdownURL.deletingLastPathComponent()
+        let frontmatter = try parseFrontmatter(from: markdown)
 
-        let fallbackID = sanitizedSkillID(from: parentDirectory.lastPathComponent)
-        let name = extractedMarkdownTitle(from: markdown) ?? titleFromID(fallbackID)
-        let summary = extractedMarkdownSummary(from: markdown) ?? "Imported from \(markdownURL.lastPathComponent)"
+        guard let skillNameRaw = frontmatter["name"], !skillNameRaw.isEmpty else {
+            throw SkillHubError.invalidManifest("SKILL.md frontmatter requires non-empty 'name'")
+        }
+        guard let descriptionRaw = frontmatter["description"], !descriptionRaw.isEmpty else {
+            throw SkillHubError.invalidManifest("SKILL.md frontmatter requires non-empty 'description'")
+        }
+
+        let skillName = skillNameRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let description = descriptionRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+        try validateAgentSkillName(skillName)
+        if description.count > 1024 {
+            throw SkillHubError.invalidManifest("SKILL.md frontmatter 'description' must be 1-1024 characters")
+        }
+
+        let expectedDirectoryName = markdownURL.deletingLastPathComponent().lastPathComponent
+        if expectedDirectoryName != skillName {
+            throw SkillHubError.invalidManifest("SKILL.md 'name' must match parent directory name. name=\(skillName), directory=\(expectedDirectoryName)")
+        }
 
         let manifest = SkillManifest(
-            id: fallbackID,
-            name: name,
+            id: skillName,
+            name: skillName,
             version: "1.0.0",
-            summary: summary,
+            summary: description,
             entrypoint: markdownURL.lastPathComponent,
             tags: [],
             adapters: []
         )
 
-        let manifestPath = parentDirectory.appendingPathComponent("skill.json")
+        let manifestPath = markdownURL.deletingLastPathComponent().appendingPathComponent("skill.json")
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(manifest).write(to: manifestPath)
         return (manifest, manifestPath.path)
     }
 
-    private func extractedMarkdownTitle(from markdown: String) -> String? {
-        for line in markdown.split(separator: "\n", omittingEmptySubsequences: false) {
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.hasPrefix("# ") {
-                return String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines)
-            }
+    private func parseFrontmatter(from markdown: String) throws -> [String: String] {
+        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        guard lines.count >= 3, lines[0].trimmingCharacters(in: .whitespacesAndNewlines) == "---" else {
+            throw SkillHubError.invalidManifest("SKILL.md must start with YAML frontmatter delimited by '---'")
         }
-        return nil
-    }
 
-    private func extractedMarkdownSummary(from markdown: String) -> String? {
-        var inCodeBlock = false
-        for line in markdown.split(separator: "\n", omittingEmptySubsequences: false) {
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.hasPrefix("```") {
-                inCodeBlock.toggle()
-                continue
-            }
-            if inCodeBlock || trimmed.isEmpty || trimmed.hasPrefix("#") {
-                continue
+        var index = 1
+        var fields: [String: String] = [:]
+        var foundClosing = false
+        while index < lines.count {
+            let rawLine = lines[index]
+            let trimmed = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed == "---" {
+                foundClosing = true
+                break
             }
 
-            if trimmed.count <= 240 {
-                return trimmed
+            if !trimmed.isEmpty, !trimmed.hasPrefix("#") {
+                let parts = rawLine.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+                if parts.count == 2 {
+                    let key = parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    let value = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+                    if !key.isEmpty {
+                        fields[key] = value
+                    }
+                }
             }
-            let cutoff = trimmed.index(trimmed.startIndex, offsetBy: 240)
-            return String(trimmed[..<cutoff])
+            index += 1
         }
-        return nil
+
+        if !foundClosing {
+            throw SkillHubError.invalidManifest("SKILL.md frontmatter must end with '---'")
+        }
+
+        return fields
     }
 
-    private func sanitizedSkillID(from raw: String) -> String {
-        let lowered = raw.lowercased()
-        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789-_")
-        let transformed = lowered.map { allowed.contains($0) ? String($0) : "-" }.joined()
-        let collapsed = transformed.replacingOccurrences(of: "--+", with: "-", options: .regularExpression)
-        let trimmed = collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "-_"))
-        return trimmed.isEmpty ? "imported-skill" : trimmed
-    }
+    private func validateAgentSkillName(_ skillName: String) throws {
+        if skillName.count < 1 || skillName.count > 64 {
+            throw SkillHubError.invalidManifest("SKILL.md frontmatter 'name' must be 1-64 characters")
+        }
 
-    private func titleFromID(_ id: String) -> String {
-        id
-            .replacingOccurrences(of: "-", with: " ")
-            .replacingOccurrences(of: "_", with: " ")
-            .split(separator: " ")
-            .map { $0.capitalized }
-            .joined(separator: " ")
+        let pattern = "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        let range = NSRange(location: 0, length: skillName.utf16.count)
+        let regex = try NSRegularExpression(pattern: pattern)
+        if regex.firstMatch(in: skillName, options: [], range: range) == nil {
+            throw SkillHubError.invalidManifest("SKILL.md frontmatter 'name' must use lowercase letters, numbers, and single hyphens")
+        }
     }
 
     private func stageSkillInStore(skillID: String, sourceDirectory: URL) throws -> URL {
@@ -665,11 +689,5 @@ extension CLI {
 
     private func stagedSkillPath(skillID: String) -> URL {
         SkillHubPaths.defaultSkillsDirectory().appendingPathComponent(skillID, isDirectory: true)
-    }
-
-    private func skillIDFromManifestPath(_ manifestPath: String) throws -> String {
-        let manifestURL = Self.expandPath(manifestPath)
-        let manifestData = try Data(contentsOf: manifestURL)
-        return try JSONDecoder().decode(SkillManifest.self, from: manifestData).id
     }
 }
