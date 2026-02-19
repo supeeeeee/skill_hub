@@ -65,17 +65,27 @@ public struct CursorAdapter: ProductAdapter {
     // MARK: - ProductAdapter
 
     public func detect() -> ProductDetectionResult {
-        let fm = FileManager.default
-        // Check both possible locations
-        if fm.fileExists(atPath: cursorAppSupportRoot.path) || fm.fileExists(atPath: cursorDotRoot.path) {
+        if let path = ProductDetectionUtils.firstExistingPath(in: [
+            cursorAppSupportRoot.path,
+            cursorDotRoot.path,
+            "/Applications/Cursor.app"
+        ]) {
             return ProductDetectionResult(
                 isDetected: true,
-                reason: "Detected Cursor at \(cursorAppSupportRoot.path) or \(cursorDotRoot.path)"
+                reason: "Detected filesystem footprint at \(path)"
             )
         }
+
+        if let executable = ProductDetectionUtils.firstExecutablePath(named: ["cursor"]) {
+            return ProductDetectionResult(
+                isDetected: true,
+                reason: "Detected executable at \(executable)"
+            )
+        }
+
         return ProductDetectionResult(
             isDetected: false,
-            reason: "Missing \(cursorAppSupportRoot.path) and \(cursorDotRoot.path)"
+            reason: "No Cursor footprint at \(cursorAppSupportRoot.path) or \(cursorDotRoot.path), and no 'cursor' executable found"
         )
     }
 

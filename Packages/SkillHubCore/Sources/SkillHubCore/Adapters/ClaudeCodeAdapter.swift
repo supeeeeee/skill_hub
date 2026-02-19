@@ -49,17 +49,27 @@ public struct ClaudeCodeAdapter: ProductAdapter {
     // MARK: - ProductAdapter
 
     public func detect() -> ProductDetectionResult {
-        let fm = FileManager.default
-        // Check if Claude Code config directory exists
-        if fm.fileExists(atPath: claudeCodeConfigRoot.path) {
+        if let path = ProductDetectionUtils.firstExistingPath(in: [
+            claudeCodeConfigRoot.path,
+            claudeCodeSettingsJSON.path,
+            claudeCodeSkillsDirectory.path
+        ]) {
             return ProductDetectionResult(
                 isDetected: true,
-                reason: "Detected at \(claudeCodeConfigRoot.path)"
+                reason: "Detected filesystem footprint at \(path)"
             )
         }
+
+        if let executable = ProductDetectionUtils.firstExecutablePath(named: ["claude"]) {
+            return ProductDetectionResult(
+                isDetected: true,
+                reason: "Detected executable at \(executable)"
+            )
+        }
+
         return ProductDetectionResult(
             isDetected: false,
-            reason: "Missing \(claudeCodeConfigRoot.path)"
+            reason: "No config footprint at \(claudeCodeConfigRoot.path) and no 'claude' executable found"
         )
     }
 

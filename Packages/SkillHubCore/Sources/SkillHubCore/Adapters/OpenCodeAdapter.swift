@@ -50,16 +50,27 @@ public struct OpenCodeAdapter: ProductAdapter {
     // MARK: - ProductAdapter
 
     public func detect() -> ProductDetectionResult {
-        let fm = FileManager.default
-        if fm.fileExists(atPath: openCodeConfigRoot.path) {
+        if let path = ProductDetectionUtils.firstExistingPath(in: [
+            openCodeConfigRoot.path,
+            openCodeConfigJSON.path,
+            openCodeSkillsDirectory.path
+        ]) {
             return ProductDetectionResult(
                 isDetected: true,
-                reason: "Detected at \(openCodeConfigRoot.path)"
+                reason: "Detected filesystem footprint at \(path)"
             )
         }
+
+        if let executable = ProductDetectionUtils.firstExecutablePath(named: ["opencode"]) {
+            return ProductDetectionResult(
+                isDetected: true,
+                reason: "Detected executable at \(executable)"
+            )
+        }
+
         return ProductDetectionResult(
             isDetected: false,
-            reason: "Missing \(openCodeConfigRoot.path)"
+            reason: "No config footprint at \(openCodeConfigRoot.path) and no 'opencode' executable found"
         )
     }
 

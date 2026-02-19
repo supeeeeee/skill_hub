@@ -25,17 +25,26 @@ public struct OpenClawAdapter: ProductAdapter {
     }
 
     public func detect() -> ProductDetectionResult {
-        let fm = FileManager.default
-        if fm.fileExists(atPath: openClawRoot.path) {
+        if let path = ProductDetectionUtils.firstExistingPath(in: [
+            openClawRoot.path,
+            defaultOpenClawSkillsDirectory.path
+        ]) {
             return ProductDetectionResult(
                 isDetected: true,
-                reason: "Detected at \(openClawRoot.path)"
+                reason: "Detected filesystem footprint at \(path)"
+            )
+        }
+
+        if let executable = ProductDetectionUtils.firstExecutablePath(named: ["openclaw"]) {
+            return ProductDetectionResult(
+                isDetected: true,
+                reason: "Detected executable at \(executable)"
             )
         }
 
         return ProductDetectionResult(
             isDetected: false,
-            reason: "Missing \(openClawRoot.path)"
+            reason: "No config footprint at \(openClawRoot.path) and no 'openclaw' executable found"
         )
     }
 

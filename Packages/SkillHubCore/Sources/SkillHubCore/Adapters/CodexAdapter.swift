@@ -25,17 +25,26 @@ public struct CodexAdapter: ProductAdapter {
     }
 
     public func detect() -> ProductDetectionResult {
-        let fm = FileManager.default
-        if fm.fileExists(atPath: codexRoot.path) {
+        if let path = ProductDetectionUtils.firstExistingPath(in: [
+            codexRoot.path,
+            defaultCodexSkillsDirectory.path
+        ]) {
             return ProductDetectionResult(
                 isDetected: true,
-                reason: "Detected at \(codexRoot.path)"
+                reason: "Detected filesystem footprint at \(path)"
+            )
+        }
+
+        if let executable = ProductDetectionUtils.firstExecutablePath(named: ["codex"]) {
+            return ProductDetectionResult(
+                isDetected: true,
+                reason: "Detected executable at \(executable)"
             )
         }
 
         return ProductDetectionResult(
             isDetected: false,
-            reason: "Missing \(codexRoot.path)"
+            reason: "No config footprint at \(codexRoot.path) and no 'codex' executable found"
         )
     }
 
