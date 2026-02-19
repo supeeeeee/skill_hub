@@ -349,11 +349,23 @@ extension CLI {
     }
 
     private func fetchOrCloneSkill(source: String) throws -> (SkillManifest, String) {
+        if let githubTree = parseGitHubTreeURL(source) {
+            return try cloneFromGit(sourceURL: githubTree.cloneURL, branch: githubTree.branch, preferredSubpath: githubTree.subpath, originalSource: source)
+        }
+
+        if source.hasPrefix("git@") || source.hasSuffix(".git") {
+            return try cloneFromGit(sourceURL: source, branch: nil, preferredSubpath: nil, originalSource: source)
+        }
+
+        if let url = URL(string: source),
+           let host = url.host,
+           host.contains("github.com")
+        {
+            return try cloneFromGit(sourceURL: source, branch: nil, preferredSubpath: nil, originalSource: source)
+        }
+
         if source.hasPrefix("http://") || source.hasPrefix("https://") {
             return try fetchFromURL(source)
-        }
-        if source.hasPrefix("git@") || source.contains("github.com") {
-            return try cloneFromGit(source)
         }
 
         let manifestURL = Self.expandPath(source)
@@ -399,20 +411,29 @@ extension CLI {
         return (manifest, manifestPath.path)
     }
 
-    private func cloneFromGit(_ gitURL: String) throws -> (SkillManifest, String) {
+    private func cloneFromGit(sourceURL: String, branch: String?, preferredSubpath: String?, originalSource: String) throws -> (SkillManifest, String) {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("skillhub-git-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
-        var fullURL = gitURL
-        if gitURL.hasPrefix("git@") {
-            fullURL = gitURL.replacingOccurrences(of: ":", with: "/").replacingOccurrences(of: "git@", with: "https://")
+        var cloneURL = sourceURL
+        if sourceURL.hasPrefix("git@") {
+            cloneURL = sourceURL.replacingOccurrences(of: ":", with: "/").replacingOccurrences(of: "git@", with: "https://")
         }
 
-        print("Cloning \(fullURL)...")
+        if !cloneURL.hasSuffix(".git"), let url = URL(string: cloneURL), url.host?.contains("github.com") == true {
+            cloneURL += ".git"
+        }
+
+        print("Cloning \(cloneURL)...")
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["clone", "--depth", "1", fullURL, tempDir.path]
+        var cloneArguments = ["clone", "--depth", "1"]
+        if let branch, !branch.isEmpty {
+            cloneArguments.append(contentsOf: ["--branch", branch, "--single-branch"])
+        }
+        cloneArguments.append(contentsOf: [cloneURL, tempDir.path])
+        process.arguments = cloneArguments
         process.standardOutput = FileHandle.standardOutput
         process.standardError = FileHandle.standardError
 
@@ -420,36 +441,174 @@ extension CLI {
         process.waitUntilExit()
 
         guard process.terminationStatus == 0 else {
-            throw SkillHubError.invalidManifest("Git clone failed for: \(gitURL)")
+            throw SkillHubError.invalidManifest("Git clone failed for: \(originalSource)")
         }
 
-        let contents = try FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil)
-        var manifestURL: URL?
-        for item in contents {
-            if item.lastPathComponent == "skill.json" {
-                manifestURL = item
-                break
+        let searchRoot: URL
+        if let preferredSubpath, !preferredSubpath.isEmpty {
+            let candidate = tempDir.appendingPathComponent(preferredSubpath, isDirectory: true)
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: candidate.path, isDirectory: &isDir), isDir.boolValue else {
+                throw SkillHubError.invalidManifest("Could not find skill directory in cloned repo: \(preferredSubpath)")
             }
-            if let subContents = try? FileManager.default.contentsOfDirectory(at: item, includingPropertiesForKeys: nil) {
-                for subItem in subContents where subItem.lastPathComponent == "skill.json" {
-                    manifestURL = subItem
-                    break
-                }
-            }
-            if manifestURL != nil {
-                break
-            }
+            searchRoot = candidate
+        } else {
+            searchRoot = tempDir
         }
 
-        guard let manifestFile = manifestURL else {
-            throw SkillHubError.invalidManifest("No skill.json found in git repo: \(gitURL)")
+        guard let manifestFile = locateManifestFile(in: searchRoot) else {
+            throw SkillHubError.invalidManifest("No supported manifest found in source: \(originalSource). Expected one of: skill.json, manifest.json, SKILL.md")
         }
 
-        let manifestData = try Data(contentsOf: manifestFile)
-        let manifest = try JSONDecoder().decode(SkillManifest.self, from: manifestData)
+        let (manifest, manifestPath) = try loadManifestAndPath(from: manifestFile)
 
         print("Cloned skill \(manifest.id) to \(tempDir.path)")
+        return (manifest, manifestPath)
+    }
+
+    private func parseGitHubTreeURL(_ source: String) -> (cloneURL: String, branch: String, subpath: String)? {
+        guard let url = URL(string: source),
+              let host = url.host,
+              host.contains("github.com")
+        else {
+            return nil
+        }
+
+        let parts = url.path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard parts.count >= 5, parts[2] == "tree" else {
+            return nil
+        }
+
+        let owner = parts[0]
+        let repo = parts[1]
+        let branch = parts[3]
+        let subpath = parts.dropFirst(4).joined(separator: "/")
+        let cloneURL = "https://github.com/\(owner)/\(repo).git"
+        return (cloneURL, branch, subpath)
+    }
+
+    private func locateManifestFile(in root: URL) -> URL? {
+        let preferredNames = ["skill.json", "manifest.json", "SKILL.md", "skill.md"]
+        let fm = FileManager.default
+
+        for name in preferredNames {
+            let candidate = root.appendingPathComponent(name)
+            if fm.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+        }
+
+        guard let enumerator = fm.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return nil
+        }
+
+        var best: (url: URL, depth: Int, priority: Int)?
+        for case let fileURL as URL in enumerator {
+            let name = fileURL.lastPathComponent
+            guard let priority = preferredNames.firstIndex(of: name) else {
+                continue
+            }
+
+            let depth = fileURL.pathComponents.count
+            if let currentBest = best {
+                if depth < currentBest.depth || (depth == currentBest.depth && priority < currentBest.priority) {
+                    best = (fileURL, depth, priority)
+                }
+            } else {
+                best = (fileURL, depth, priority)
+            }
+        }
+
+        return best?.url
+    }
+
+    private func loadManifestAndPath(from manifestFile: URL) throws -> (SkillManifest, String) {
+        let fileName = manifestFile.lastPathComponent.lowercased()
+        if fileName == "skill.md" {
+            return try synthesizeManifestFromSkillMarkdown(at: manifestFile)
+        }
+
+        let data = try Data(contentsOf: manifestFile)
+        let manifest = try JSONDecoder().decode(SkillManifest.self, from: data)
         return (manifest, manifestFile.path)
+    }
+
+    private func synthesizeManifestFromSkillMarkdown(at markdownURL: URL) throws -> (SkillManifest, String) {
+        let markdown = try String(contentsOf: markdownURL, encoding: .utf8)
+        let parentDirectory = markdownURL.deletingLastPathComponent()
+
+        let fallbackID = sanitizedSkillID(from: parentDirectory.lastPathComponent)
+        let name = extractedMarkdownTitle(from: markdown) ?? titleFromID(fallbackID)
+        let summary = extractedMarkdownSummary(from: markdown) ?? "Imported from \(markdownURL.lastPathComponent)"
+
+        let manifest = SkillManifest(
+            id: fallbackID,
+            name: name,
+            version: "1.0.0",
+            summary: summary,
+            entrypoint: markdownURL.lastPathComponent,
+            tags: [],
+            adapters: []
+        )
+
+        let manifestPath = parentDirectory.appendingPathComponent("skill.json")
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(manifest).write(to: manifestPath)
+        return (manifest, manifestPath.path)
+    }
+
+    private func extractedMarkdownTitle(from markdown: String) -> String? {
+        for line in markdown.split(separator: "\n", omittingEmptySubsequences: false) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("# ") {
+                return String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        return nil
+    }
+
+    private func extractedMarkdownSummary(from markdown: String) -> String? {
+        var inCodeBlock = false
+        for line in markdown.split(separator: "\n", omittingEmptySubsequences: false) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("```") {
+                inCodeBlock.toggle()
+                continue
+            }
+            if inCodeBlock || trimmed.isEmpty || trimmed.hasPrefix("#") {
+                continue
+            }
+
+            if trimmed.count <= 240 {
+                return trimmed
+            }
+            let cutoff = trimmed.index(trimmed.startIndex, offsetBy: 240)
+            return String(trimmed[..<cutoff])
+        }
+        return nil
+    }
+
+    private func sanitizedSkillID(from raw: String) -> String {
+        let lowered = raw.lowercased()
+        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789-_")
+        let transformed = lowered.map { allowed.contains($0) ? String($0) : "-" }.joined()
+        let collapsed = transformed.replacingOccurrences(of: "--+", with: "-", options: .regularExpression)
+        let trimmed = collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "-_"))
+        return trimmed.isEmpty ? "imported-skill" : trimmed
+    }
+
+    private func titleFromID(_ id: String) -> String {
+        id
+            .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .split(separator: " ")
+            .map { $0.capitalized }
+            .joined(separator: " ")
     }
 
     private func stageSkillInStore(skillID: String, sourceDirectory: URL) throws -> URL {

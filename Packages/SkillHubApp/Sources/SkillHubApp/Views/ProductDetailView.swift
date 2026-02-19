@@ -102,7 +102,7 @@ struct ProductDetailView: View {
         .sheet(isPresented: $showPathEditor) {
             CustomPathEditorSheet(
                 productName: product.name,
-                currentPath: editingPath,
+                currentPath: editingPath.isEmpty ? resolvedSkillsPath(for: product.id) : editingPath,
                 isPresented: $showPathEditor,
                 onSave: { newPath in
                     saveSkillsPath(newPath)
@@ -112,7 +112,7 @@ struct ProductDetailView: View {
         .sheet(isPresented: $showConfigPathEditor) {
             CustomConfigPathEditorSheet(
                 productName: product.name,
-                currentPath: editingConfigPath,
+                currentPath: editingConfigPath.isEmpty ? (resolvedConfigPath(for: product.id) ?? "") : editingConfigPath,
                 isPresented: $showConfigPathEditor,
                 onSave: { newPath in
                     viewModel.setProductConfigPath(productID: product.id, path: newPath)
@@ -896,6 +896,9 @@ struct CustomPathEditorSheet: View {
         .onAppear {
             customPath = currentPath
         }
+        .onChange(of: currentPath) { newValue in
+            customPath = newValue
+        }
     }
 }
 
@@ -993,6 +996,9 @@ struct CustomConfigPathEditorSheet: View {
         .frame(width: 450, height: 350)
         .onAppear {
             customPath = currentPath
+        }
+        .onChange(of: currentPath) { newValue in
+            customPath = newValue
         }
     }
 }
