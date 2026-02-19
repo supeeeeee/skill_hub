@@ -137,20 +137,33 @@ final class SkillService {
         enabled: Bool,
         currentSkills: [InstalledSkillRecord]
     ) throws {
-        let adapter = try adapterRegistry.adapter(for: productID)
+        if enabled {
+            if let skillRecord = currentSkills.first(where: { $0.manifest.id == manifest.id }),
+               let mode = skillRecord.lastInstallModeByProduct[productID] {
+                let adapter = try adapterRegistry.adapter(for: productID)
+                try adapter.enable(skillID: manifest.id, mode: mode)
+                try skillStore.setEnabled(skillID: manifest.id, productID: productID, enabled: true)
+                return
+            }
 
-        guard let skillRecord = currentSkills.first(where: { $0.manifest.id == manifest.id }),
-              let mode = skillRecord.lastInstallModeByProduct[productID] else {
+            try installSkill(
+                manifest: manifest,
+                productID: productID,
+                mode: .copy,
+                currentSkills: currentSkills
+            )
+            return
+        }
+
+        let adapter = try adapterRegistry.adapter(for: productID)
+        if let skillRecord = currentSkills.first(where: { $0.manifest.id == manifest.id }),
+           skillRecord.lastInstallModeByProduct[productID] != nil {
+            try adapter.disable(skillID: manifest.id)
+            try skillStore.setEnabled(skillID: manifest.id, productID: productID, enabled: false)
+        } else {
             throw SkillHubError.invalidManifest("Skill \(manifest.name) is not installed for \(productID)")
         }
 
-        if enabled {
-            try adapter.enable(skillID: manifest.id, mode: mode)
-        } else {
-            try adapter.disable(skillID: manifest.id)
-        }
-
-        try skillStore.setEnabled(skillID: manifest.id, productID: productID, enabled: enabled)
     }
 
     func acquireSkill(manifest: SkillManifest, fromProduct productID: String, skillsPath: String) throws {
