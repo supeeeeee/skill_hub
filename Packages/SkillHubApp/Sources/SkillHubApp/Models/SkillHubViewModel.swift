@@ -363,6 +363,38 @@ class SkillHubViewModel: ObservableObject {
         }
     }
 
+    func addCustomProduct(
+        name: String,
+        id: String,
+        skillsDirectoryPath: String,
+        executableNamesRaw: String,
+        iconName: String?
+    ) {
+        do {
+            try skillService.addCustomProduct(
+                name: name,
+                id: id,
+                skillsDirectoryPath: skillsDirectoryPath,
+                executableNamesRaw: executableNamesRaw,
+                iconName: iconName
+            )
+            loadData()
+            log("Added custom product \(name)", type: .success)
+        } catch {
+            log("Failed to add custom product: \(errorMessage(from: error))", type: .error)
+        }
+    }
+
+    func removeCustomProduct(productID: String) {
+        do {
+            try skillService.removeCustomProduct(productID: productID)
+            loadData()
+            log("Removed custom product \(productID)", type: .success)
+        } catch {
+            log("Failed to remove custom product: \(errorMessage(from: error))", type: .error)
+        }
+    }
+
     private func errorMessage(from error: Error) -> String {
         if let skillHubError = error as? SkillHubError {
             return skillHubError.description

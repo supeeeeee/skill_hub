@@ -1,6 +1,109 @@
 import Foundation
 import SkillHubCore
 
+private struct AppCustomProductAdapter: ProductAdapter {
+    let config: CustomProductConfig
+    let supportedInstallModes: [InstallMode] = [.copy]
+
+    var id: String { config.id }
+    var name: String { config.name }
+
+    private var skillStoreRoot: URL {
+        SkillHubPaths.defaultSkillsDirectory()
+    }
+
+    func skillsDirectory() -> URL {
+        URL(fileURLWithPath: config.skillsDirectoryPath, isDirectory: true)
+    }
+
+    func detect() -> ProductDetectionResult {
+        if FileManager.default.fileExists(atPath: skillsDirectory().path) {
+            return ProductDetectionResult(isDetected: true, reason: "Detected filesystem footprint at \(skillsDirectory().path)")
+        }
+
+        if let executable = detectExecutable(named: config.executableNames) {
+            return ProductDetectionResult(isDetected: true, reason: "Detected executable at \(executable)")
+        }
+
+        if config.executableNames.isEmpty {
+            return ProductDetectionResult(isDetected: false, reason: "Missing \(skillsDirectory().path)")
+        }
+
+        return ProductDetectionResult(
+            isDetected: false,
+            reason: "Missing \(skillsDirectory().path) and no executable found: \(config.executableNames.joined(separator: ", "))"
+        )
+    }
+
+    func install(skill: SkillManifest, mode: InstallMode) throws -> InstallMode {
+        let resolvedMode = try resolveInstallMode(mode)
+        let stagedSkillPath = skillStoreRoot.appendingPathComponent(skill.id, isDirectory: true)
+        guard FileManager.default.fileExists(atPath: stagedSkillPath.path) else {
+            throw SkillHubError.invalidManifest("Skill not staged in \(stagedSkillPath.path)")
+        }
+
+        try FileSystemUtils.ensureDirectoryExists(at: skillsDirectory())
+        return resolvedMode
+    }
+
+    func enable(skillID: String, mode: InstallMode) throws {
+        let source = skillStoreRoot.appendingPathComponent(skillID, isDirectory: true)
+        guard FileManager.default.fileExists(atPath: source.path) else {
+            throw SkillHubError.invalidManifest("Skill not staged in \(source.path)")
+        }
+
+        try FileSystemUtils.ensureDirectoryExists(at: skillsDirectory())
+        let destination = skillsDirectory().appendingPathComponent(skillID, isDirectory: true)
+        _ = try FileSystemUtils.backupIfExists(at: destination, productID: id, skillID: skillID)
+        _ = try resolveInstallMode(mode)
+        try FileSystemUtils.copyItem(from: source, to: destination)
+    }
+
+    func disable(skillID: String) throws {
+        let destination = skillsDirectory().appendingPathComponent(skillID, isDirectory: true)
+        if FileManager.default.fileExists(atPath: destination.path) {
+            try FileManager.default.removeItem(at: destination)
+        }
+    }
+
+    func status(skillID: String) -> ProductSkillStatus {
+        let staged = skillStoreRoot.appendingPathComponent(skillID, isDirectory: true)
+        let enabled = skillsDirectory().appendingPathComponent(skillID, isDirectory: true)
+        let isInstalled = FileManager.default.fileExists(atPath: staged.path)
+        let isEnabled = FileManager.default.fileExists(atPath: enabled.path)
+        let detail = isEnabled
+            ? "Enabled via copied files at \(enabled.path)"
+            : "No enabled files at \(enabled.path)"
+
+        return ProductSkillStatus(isInstalled: isInstalled, isEnabled: isEnabled, detail: detail)
+    }
+
+    private func detectExecutable(named names: [String]) -> String? {
+        let envPaths = (ProcessInfo.processInfo.environment["PATH"] ?? "")
+            .split(separator: ":")
+            .map(String.init)
+
+        for binary in names where !binary.isEmpty {
+            if binary.contains("/") {
+                let expanded = (binary as NSString).expandingTildeInPath
+                if FileManager.default.isExecutableFile(atPath: expanded) {
+                    return expanded
+                }
+                continue
+            }
+
+            for root in envPaths where !root.isEmpty {
+                let candidate = URL(fileURLWithPath: root).appendingPathComponent(binary).path
+                if FileManager.default.isExecutableFile(atPath: candidate) {
+                    return candidate
+                }
+            }
+        }
+
+        return nil
+    }
+}
+
 final class SkillService {
     private struct SkillHubCommand {
         let executablePath: String
@@ -9,11 +112,11 @@ final class SkillService {
     }
 
     let skillStore: SkillStore
-    let adapterRegistry: AdapterRegistry
+    private(set) var adapterRegistry: AdapterRegistry
 
     init(
         skillStore: SkillStore = JSONSkillStore(),
-        adapterRegistry: AdapterRegistry = SkillService.makeDefaultAdapterRegistry()
+        adapterRegistry: AdapterRegistry = SkillService.makeAdapterRegistry()
     ) {
         self.skillStore = skillStore
         self.adapterRegistry = adapterRegistry
@@ -24,25 +127,113 @@ final class SkillService {
     }
 
     func loadProducts() -> [Product] {
+        reloadAdapterRegistry()
+
         let cfg = SkillHubConfig.load()
         let state = (try? skillStore.loadState()) ?? SkillHubState()
+        let customProductsByID = Dictionary(uniqueKeysWithValues: cfg.customProducts.map { ($0.id, $0) })
 
         return adapterRegistry.all().map { adapter in
             let detection = adapter.detect()
             let status: ProductStatus = detection.isDetected ? .active : .notInstalled
+            let customProduct = customProductsByID[adapter.id]
 
             return Product(
                 id: adapter.id,
                 name: adapter.name,
-                iconName: iconName(for: adapter.id),
+                iconName: iconName(for: adapter.id, customIconName: customProduct?.iconName),
                 description: detection.reason,
                 status: status,
                 health: .unknown,
                 supportedModes: adapter.supportedInstallModes,
                 customSkillsPath: cfg.productSkillsDirectoryOverrides[adapter.id],
-                customConfigPath: state.productConfigFilePathOverrides[adapter.id]
+                customConfigPath: state.productConfigFilePathOverrides[adapter.id],
+                isCustom: customProduct != nil
             )
         }
+    }
+
+    func addCustomProduct(
+        name: String,
+        id: String,
+        skillsDirectoryPath: String,
+        executableNamesRaw: String,
+        iconName: String?
+    ) throws {
+        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedName.isEmpty else {
+            throw SkillHubError.invalidManifest("Product name cannot be empty")
+        }
+
+        let normalizedID = normalizeProductID(id)
+        guard !normalizedID.isEmpty else {
+            throw SkillHubError.invalidManifest("Product ID cannot be empty")
+        }
+
+        guard isValidProductID(normalizedID) else {
+            throw SkillHubError.invalidManifest("Product ID can only contain lowercase letters, digits, '-' and '_'")
+        }
+
+        let normalizedSkillsPath = (skillsDirectoryPath as NSString)
+            .expandingTildeInPath
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard normalizedSkillsPath.hasPrefix("/") else {
+            throw SkillHubError.invalidManifest("Skills directory path must be an absolute path")
+        }
+
+        let executableNames = executableNamesRaw
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        var cfg = SkillHubConfig.load()
+        let builtInIDs = Set(Self.builtInAdapters().map(\.id))
+
+        if builtInIDs.contains(normalizedID) {
+            throw SkillHubError.invalidManifest("Product ID '\(normalizedID)' conflicts with a built-in product")
+        }
+
+        if cfg.customProducts.contains(where: { $0.id == normalizedID }) {
+            throw SkillHubError.invalidManifest("Product ID '\(normalizedID)' already exists")
+        }
+
+        cfg.customProducts.append(
+            CustomProductConfig(
+                id: normalizedID,
+                name: normalizedName,
+                skillsDirectoryPath: normalizedSkillsPath,
+                executableNames: executableNames,
+                iconName: iconName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        )
+        try cfg.save()
+        reloadAdapterRegistry()
+    }
+
+    func removeCustomProduct(productID: String) throws {
+        let normalizedID = normalizeProductID(productID)
+        var cfg = SkillHubConfig.load()
+        let beforeCount = cfg.customProducts.count
+        cfg.customProducts.removeAll { $0.id == normalizedID }
+
+        guard cfg.customProducts.count != beforeCount else {
+            throw SkillHubError.invalidManifest("Custom product '\(normalizedID)' not found")
+        }
+
+        cfg.productSkillsDirectoryOverrides.removeValue(forKey: normalizedID)
+        try cfg.save()
+
+        var state = try skillStore.loadState()
+        state.productConfigFilePathOverrides.removeValue(forKey: normalizedID)
+        for index in state.skills.indices {
+            state.skills[index].installedProducts.removeAll { $0 == normalizedID }
+            state.skills[index].enabledProducts.removeAll { $0 == normalizedID }
+            state.skills[index].lastInstallModeByProduct.removeValue(forKey: normalizedID)
+        }
+        try skillStore.saveState(state)
+
+        reloadAdapterRegistry()
     }
 
     func reconcileInstalledSkillsFromProducts(
@@ -248,7 +439,12 @@ final class SkillService {
         return skill.manifest.name
     }
 
-    private func iconName(for id: String) -> String {
+    private func iconName(for id: String, customIconName: String?) -> String {
+        if let customIcon = customIconName,
+           !customIcon.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return customIcon
+        }
+
         switch id {
         case "vscode": return "chevron.left.forwardslash.chevron.right"
         case "cursor": return "cursorarrow.rays"
@@ -257,8 +453,21 @@ final class SkillService {
         case "openclaw": return "shippingbox"
         case "codex": return "brain"
         case "opencode": return "terminal"
-        default: return "questionmark.circle"
+        default: return customIconName == nil ? "questionmark.circle" : "shippingbox.fill"
         }
+    }
+
+    private func normalizeProductID(_ id: String) -> String {
+        id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private func isValidProductID(_ id: String) -> Bool {
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789-_")
+        return id.rangeOfCharacter(from: allowed.inverted) == nil
+    }
+
+    private func reloadAdapterRegistry() {
+        self.adapterRegistry = Self.makeAdapterRegistry()
     }
 
     private func runSkillHub(arguments: [String], action: String) throws {
@@ -540,14 +749,28 @@ final class SkillService {
         return nil
     }
 
-    private static func makeDefaultAdapterRegistry() -> AdapterRegistry {
-        let adapters: [ProductAdapter] = [
+    private static func builtInAdapters() -> [ProductAdapter] {
+        [
             OpenClawAdapter(),
             CodexAdapter(),
             OpenCodeAdapter(),
             ClaudeCodeAdapter(),
             CursorAdapter()
         ]
-        return AdapterRegistry(adapters: adapters)
+    }
+
+    private static func makeAdapterRegistry() -> AdapterRegistry {
+        let cfg = SkillHubConfig.load()
+        let builtIn = builtInAdapters()
+        let builtInIDs = Set(builtIn.map(\.id))
+
+        let customAdapters: [ProductAdapter] = cfg.customProducts.compactMap { config in
+            if builtInIDs.contains(config.id) {
+                return nil
+            }
+            return AppCustomProductAdapter(config: config)
+        }
+
+        return AdapterRegistry(adapters: builtIn + customAdapters)
     }
 }

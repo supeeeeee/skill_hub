@@ -17,6 +17,7 @@ struct Product: Identifiable, Hashable, Sendable {
     let supportedModes: [InstallMode]
     var customSkillsPath: String? = nil // from SkillHubConfig.productSkillsDirectoryOverrides
     var customConfigPath: String? = nil // from state.json productConfigFilePathOverrides
+    var isCustom: Bool = false
 }
 
 struct SkillBinding: Identifiable, Sendable {

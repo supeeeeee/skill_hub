@@ -38,6 +38,15 @@ struct ProductCardView: View {
             
             VStack(alignment: .trailing, spacing: 4) {
                 StatusBadgeView(status: product.status)
+                if product.isCustom {
+                    Text("CUSTOM")
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.accentColor.opacity(0.12))
+                        .foregroundColor(.accentColor)
+                        .cornerRadius(4)
+                }
             }
         }
         .padding()

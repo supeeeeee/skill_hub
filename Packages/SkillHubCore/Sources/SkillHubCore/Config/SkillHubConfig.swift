@@ -1,10 +1,48 @@
 import Foundation
 
+public struct CustomProductConfig: Codable, Sendable, Hashable {
+    public var id: String
+    public var name: String
+    public var skillsDirectoryPath: String
+    public var executableNames: [String]
+    public var iconName: String?
+
+    public init(
+        id: String,
+        name: String,
+        skillsDirectoryPath: String,
+        executableNames: [String] = [],
+        iconName: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.skillsDirectoryPath = skillsDirectoryPath
+        self.executableNames = executableNames
+        self.iconName = iconName
+    }
+}
+
 public struct SkillHubConfig: Codable, Sendable {
     public var productSkillsDirectoryOverrides: [String: String]
+    public var customProducts: [CustomProductConfig]
 
-    public init(productSkillsDirectoryOverrides: [String: String] = [:]) {
+    public init(
+        productSkillsDirectoryOverrides: [String: String] = [:],
+        customProducts: [CustomProductConfig] = []
+    ) {
         self.productSkillsDirectoryOverrides = productSkillsDirectoryOverrides
+        self.customProducts = customProducts
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case productSkillsDirectoryOverrides
+        case customProducts
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.productSkillsDirectoryOverrides = try container.decodeIfPresent([String: String].self, forKey: .productSkillsDirectoryOverrides) ?? [:]
+        self.customProducts = try container.decodeIfPresent([CustomProductConfig].self, forKey: .customProducts) ?? []
     }
 
     public static func configFileURL() -> URL {
