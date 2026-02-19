@@ -42,23 +42,10 @@ public extension ProductAdapter {
     }
 
     func resolveInstallMode(_ mode: InstallMode) throws -> InstallMode {
-        if mode != .auto {
-            guard supportedInstallModes.contains(mode) else {
-                throw SkillHubError.unsupportedInstallMode("\(mode.rawValue) for \(id)")
-            }
-            return mode
-        }
-
-        if supportedInstallModes.contains(.symlink) {
-            return .symlink
-        }
         if supportedInstallModes.contains(.copy) {
             return .copy
         }
-        if supportedInstallModes.contains(.configPatch) {
-            return .configPatch
-        }
-        throw SkillHubError.unsupportedInstallMode("auto for \(id)")
+        throw SkillHubError.unsupportedInstallMode("copy for \(id)")
     }
 }
 

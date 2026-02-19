@@ -42,6 +42,18 @@ class SkillHubViewModel: ObservableObject {
         // 2. Load products and detection (Synchronous/Fast)
         let newProducts = skillService.loadProducts()
         self.products = newProducts
+
+        do {
+            let updatedCount = try skillService.reconcileInstalledSkillsFromProducts(
+                products: newProducts,
+                currentSkills: self.skills
+            )
+            if updatedCount > 0 {
+                self.skills = try skillService.loadSkills()
+            }
+        } catch {
+            log("Failed to reconcile product-installed skills: \(errorMessage(from: error))", type: .error)
+        }
         
         // 3. Scan for unregistered skills (Asynchronous/Disk I/O)
         Task {
@@ -99,8 +111,7 @@ class SkillHubViewModel: ObservableObject {
         }
     }
 
-    func installSkill(manifest: SkillManifest, productID: String, mode: InstallMode = .auto) async -> (success: Bool, message: String, isStubbed: Bool) {
-        let isStubbed = true // This is true for MVP as per README.md
+    func installSkill(manifest: SkillManifest, productID: String, mode: InstallMode = .copy) async -> (success: Bool, message: String) {
 
         do {
             log("Starting installation of \(manifest.name) for \(productID)...", type: .info)
@@ -118,12 +129,12 @@ class SkillHubViewModel: ObservableObject {
             // Refresh data
             loadData()
 
-            return (true, successMsg, isStubbed)
+            return (true, successMsg)
 
         } catch {
             let errorMsg = "Error installing \(manifest.name): \(errorMessage(from: error))"
             log(errorMsg, type: .error)
-            return (false, errorMsg, isStubbed)
+            return (false, errorMsg)
         }
     }
     
@@ -136,7 +147,7 @@ class SkillHubViewModel: ObservableObject {
         for productID in productIDs {
             // We use the internal logic of installSkill but might want to avoid excessive loadData calls
             // For now, reusing the existing method is safest to ensure consistency
-            let result = await installSkill(manifest: manifest, productID: productID, mode: .auto)
+            let result = await installSkill(manifest: manifest, productID: productID, mode: .copy)
             if result.success {
                 successCount += 1
             } else {

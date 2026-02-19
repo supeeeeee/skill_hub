@@ -119,7 +119,7 @@ extension CLI {
 
     func install(arguments: [String]) throws {
         guard arguments.count >= 2 else {
-            throw SkillHubError.invalidManifest("Usage: install <skill-id> <product-id> [--mode auto|symlink|copy|configPatch]")
+            throw SkillHubError.invalidManifest("Usage: install <skill-id> <product-id> [--mode copy]")
         }
 
         let skillID = arguments[0]
@@ -129,7 +129,7 @@ extension CLI {
         if let modeIndex = arguments.firstIndex(of: "--mode"), arguments.indices.contains(modeIndex + 1) {
             mode = try parseInstallMode(arguments[modeIndex + 1])
         } else {
-            mode = .auto
+            mode = .copy
         }
 
         let state = try store.loadState()
@@ -156,7 +156,7 @@ extension CLI {
 
     func apply(arguments: [String]) throws {
         guard arguments.count >= 2 else {
-            throw SkillHubError.invalidManifest("Usage: apply <source|skill-id> <product-id> [--mode auto|symlink|copy|configPatch]")
+            throw SkillHubError.invalidManifest("Usage: apply <source|skill-id> <product-id> [--mode copy]")
         }
 
         let firstArgument = arguments[0]
@@ -166,7 +166,7 @@ extension CLI {
         if let modeIndex = arguments.firstIndex(of: "--mode"), arguments.indices.contains(modeIndex + 1) {
             mode = try parseInstallMode(arguments[modeIndex + 1])
         } else {
-            mode = .auto
+            mode = .copy
         }
 
         let stateBefore = try store.loadState()

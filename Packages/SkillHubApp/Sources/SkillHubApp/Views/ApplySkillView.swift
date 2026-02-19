@@ -8,10 +8,9 @@ struct ApplySkillView: View {
     @Binding var isPresented: Bool
     
     @State private var selectedProduct: String = ""
-    @State private var selectedMode: InstallMode = .auto
     @State private var isInstalling = false
-    @State private var installationStatus: (message: String, type: MessageType)? // New state for detailed status
-    @State private var isInstallationComplete = false // New state to control button/dismissal
+    @State private var installationStatus: (message: String, type: MessageType)?
+    @State private var isInstallationComplete = false
     
     enum MessageType {
         case info, success, error, warning
@@ -31,21 +30,16 @@ struct ApplySkillView: View {
     }
     
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Install \(skill.manifest.name)")
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            // Display installation status message
-            if let status = installationStatus {
-                Text(status.message)
-                    .foregroundColor(status.type.color)
-                    .font(.callout)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Install \(skill.manifest.name)")
+                    .font(.title2.weight(.semibold))
+                Text("Copy mode only: the skill files will be installed as a local copy.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
             }
-            
-            Form {
+
+            VStack(alignment: .leading, spacing: 12) {
                 if preselectedProductID == nil {
                     Picker("Product", selection: $selectedProduct) {
                         Text("Select Product").tag("")
@@ -53,45 +47,58 @@ struct ApplySkillView: View {
                             Text(product.name).tag(product.id)
                         }
                     }
-                } else {
-                    // Show read-only product info or just a text
-                    if let product = availableProducts.first(where: { $0.id == preselectedProductID }) {
-                         HStack {
-                             Text("Product:")
-                             Spacer()
-                             Text(product.name)
-                                 .foregroundColor(.secondary)
-                         }
+                    .pickerStyle(.menu)
+                } else if let product = availableProducts.first(where: { $0.id == preselectedProductID }) {
+                    HStack {
+                        Text("Product")
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text(product.name)
                     }
                 }
-                
-                DisclosureGroup("Advanced Options") {
-                    VStack(alignment: .leading) {
-                        Picker("Install Mode", selection: $selectedMode) {
-                            ForEach(InstallMode.allCases, id: \.self) { mode in
-                                Text(self.friendlyModeName(mode)).tag(mode)
-                            }
-                        }
-                        Text("Choose how the skill will be installed.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
+
+                HStack {
+                    Text("Install mode")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text("Copy")
+                        .fontWeight(.medium)
                 }
             }
-            .padding()
-            .disabled(isInstalling || isInstallationComplete) // Disable form during/after install
-            
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.primary.opacity(0.05))
+            )
+            .disabled(isInstalling || isInstallationComplete)
+
+            if let status = installationStatus {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: iconName(for: status.type))
+                        .foregroundColor(status.type.color)
+                    Text(status.message)
+                        .foregroundColor(status.type.color)
+                        .font(.callout)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(status.type.color.opacity(0.12))
+                )
+            }
+
             HStack {
                 Button("Cancel") {
                     isPresented = false
                 }
                 .keyboardShortcut(.cancelAction)
-                .disabled(isInstalling) // Cannot cancel during installation
+                .disabled(isInstalling)
                 
                 Spacer()
                 
                 if !isInstallationComplete {
-                    Button("Smart Install") {
+                    Button("Install (Copy)") {
                         install()
                     }
                     .disabled(selectedProduct.isEmpty || isInstalling)
@@ -108,22 +115,25 @@ struct ApplySkillView: View {
                 ProgressView("Installing...")
             }
         }
-        .padding()
-        .frame(width: 400)
+        .padding(20)
+        .frame(width: 440)
         .onAppear {
             if let preselected = preselectedProductID {
                 selectedProduct = preselected
             }
         }
     }
-    
-    func friendlyModeName(_ mode: InstallMode) -> String {
-        switch mode {
-        case .symlink: return "Synced (Recommended)"
-        case .copy: return "Standalone Copy"
-        case .configPatch: return "Native Integration"
-        case .auto: return "Auto (Smart Select)"
-        default: return "Unknown Mode"
+
+    private func iconName(for type: MessageType) -> String {
+        switch type {
+        case .info:
+            return "info.circle.fill"
+        case .success:
+            return "checkmark.circle.fill"
+        case .error:
+            return "xmark.octagon.fill"
+        case .warning:
+            return "exclamationmark.triangle.fill"
         }
     }
 
@@ -137,39 +147,23 @@ struct ApplySkillView: View {
         installationStatus = ("Initiating installation...", .info)
         
         Task {
-            // Assume viewModel.installSkill now returns a more detailed result
-            // e.g., (success: Bool, message: String, isStubbed: Bool)
-            let (success, message, isStubbed) = await viewModel.installSkill(
+            let (success, message) = await viewModel.installSkill(
                 manifest: skill.manifest,
                 productID: selectedProduct,
-                mode: selectedMode
-            ) // This line would need to be updated in SkillHubViewModel
+                mode: .copy
+            )
             
             if success {
                 let summary: String
-                switch selectedMode {
-                case .symlink:
-                    summary = "Installed in Synced mode. Changes will sync across all apps."
-                case .copy:
-                    summary = "Installed as Standalone Copy. Updates won't sync automatically."
-                case .configPatch:
-                    summary = "Installed via Native Integration."
-                case .auto:
-                    summary = "Smart Install complete."
-                default:
-                    summary = "Installed successfully."
-                }
+                summary = "Installed as Standalone Copy. Updates won't sync automatically."
                 
-                installationStatus = (isStubbed ? "Installation simulated (MVP). \(message)" : "\(summary) \(message)", .success)
+                installationStatus = ("\(summary) \(message)", .success)
             } else {
                 installationStatus = ("Installation failed: \(message)", .error)
             }
             
             isInstalling = false
-            isInstallationComplete = true // Mark as complete to change button
-            
-            // Optionally, if the stubbed message is too long or requires user to check CLI,
-            // we might want a way to display it better or provide a "View Log" button.
+            isInstallationComplete = true
         }
     }
 }

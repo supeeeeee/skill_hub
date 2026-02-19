@@ -3,7 +3,7 @@ import Foundation
 public struct CodexAdapter: ProductAdapter {
     public let id = "codex"
     public let name = "Codex"
-    public let supportedInstallModes: [InstallMode] = [.auto, .symlink, .copy]
+    public let supportedInstallModes: [InstallMode] = [.copy]
 
     public init() {}
 

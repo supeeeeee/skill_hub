@@ -3,7 +3,7 @@ import Foundation
 public struct OpenClawAdapter: ProductAdapter {
     public let id = "openclaw"
     public let name = "OpenClaw"
-    public let supportedInstallModes: [InstallMode] = [.auto, .symlink, .copy]
+    public let supportedInstallModes: [InstallMode] = [.copy]
 
     public init() {}
 

@@ -45,6 +45,37 @@ final class SkillService {
         }
     }
 
+    func reconcileInstalledSkillsFromProducts(
+        products: [Product],
+        currentSkills: [InstalledSkillRecord]
+    ) throws -> Int {
+        var updatedCount = 0
+
+        for product in products {
+            let adapter = try adapterRegistry.adapter(for: product.id)
+            let installedSkillIDs = scanInstalledSkillIDs(at: adapter.skillsDirectory())
+            if installedSkillIDs.isEmpty {
+                continue
+            }
+
+            for skill in currentSkills where installedSkillIDs.contains(skill.manifest.id) {
+                let isInstalled = skill.installedProducts.contains(product.id)
+                let isEnabled = skill.enabledProducts.contains(product.id)
+                let mode = skill.lastInstallModeByProduct[product.id] ?? .unknown
+
+                if isInstalled && isEnabled && mode == .copy {
+                    continue
+                }
+
+                try skillStore.markInstalled(skillID: skill.manifest.id, productID: product.id, installMode: .copy)
+                try skillStore.setEnabled(skillID: skill.manifest.id, productID: product.id, enabled: true)
+                updatedCount += 1
+            }
+        }
+
+        return updatedCount
+    }
+
     func setProductConfigPath(productID: String, rawPath: String) throws {
         let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty && !trimmed.hasPrefix("/") {
@@ -186,12 +217,11 @@ final class SkillService {
             throw SkillHubError.invalidManifest("Staged skill directory missing after stage command: \(destination.path)")
         }
 
-        // Perform the takeover (backup original, replace with symlink)
         _ = try FileSystemUtils.backupIfExists(at: source, productID: productID, skillID: manifest.id)
-        try FileSystemUtils.createSymlink(from: destination, to: source)
+        try FileSystemUtils.copyItem(from: destination, to: source)
 
         // Update installation status
-        try skillStore.markInstalled(skillID: manifest.id, productID: productID, installMode: .symlink)
+        try skillStore.markInstalled(skillID: manifest.id, productID: productID, installMode: .copy)
         try skillStore.setEnabled(skillID: manifest.id, productID: productID, enabled: true)
     }
 
@@ -296,6 +326,48 @@ final class SkillService {
 
     private func normalizePathForCLI(_ url: URL) -> String {
         url.standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    private func scanInstalledSkillIDs(at skillsDirectory: URL) -> Set<String> {
+        var result = Set<String>()
+        let fm = Foundation.FileManager.default
+
+        guard let contents = try? fm.contentsOfDirectory(
+            at: skillsDirectory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return result
+        }
+
+        for folderURL in contents {
+            var isDirectory: ObjCBool = false
+            guard fm.fileExists(atPath: folderURL.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                continue
+            }
+
+            let candidates = [
+                folderURL.appendingPathComponent("skill.json"),
+                folderURL.appendingPathComponent("manifest.json")
+            ]
+
+            var recognized = false
+            for fileURL in candidates {
+                if let data = try? Data(contentsOf: fileURL),
+                   let manifest = try? JSONDecoder().decode(SkillManifest.self, from: data),
+                   !manifest.id.isEmpty {
+                    result.insert(manifest.id)
+                    recognized = true
+                    break
+                }
+            }
+
+            if !recognized {
+                result.insert(folderURL.lastPathComponent)
+            }
+        }
+
+        return result
     }
 
     private func expandedPath(_ path: String) -> String {

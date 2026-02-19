@@ -3,7 +3,7 @@ import Foundation
 public struct OpenCodeAdapter: ProductAdapter {
     public let id = "opencode"
     public let name = "OpenCode"
-    public let supportedInstallModes: [InstallMode] = [.auto, .symlink, .copy, .configPatch]
+    public let supportedInstallModes: [InstallMode] = [.copy]
 
     public init() {}
 

@@ -196,11 +196,11 @@ struct CLI {
           add <source>                    Register or update an Agent Skill from SKILL.md (local dir/file, URL, or git repo)
           stage <source|skill-id>         Register if needed and copy skill directory into ~/.skillhub/skills/<id>
           unstage <skill-id>              Remove staged skill directory from ~/.skillhub/skills
-          install <skill-id> <product-id> [--mode auto|symlink|copy|configPatch]
+          install <skill-id> <product-id> [--mode copy]
                                              Validate staged skill and record install mode
-          apply <source|skill-id> <product-id> [--mode auto|symlink|copy|configPatch]
+          apply <source|skill-id> <product-id> [--mode copy]
                                              Register/stage/install/enable in one command
-          setup <source|skill-id> <product-id> [--mode auto|symlink|copy|configPatch]
+          setup <source|skill-id> <product-id> [--mode copy]
                                              Register/stage/install/enable in one command
           uninstall <skill-id> <product-id>
                                              Disable skill and remove product installation state
@@ -224,13 +224,14 @@ struct CLI {
     }
 
     func parseInstallMode(_ raw: String) throws -> InstallMode {
-        if raw == "config-patch" {
-            return .configPatch
+        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normalized == "copy" {
+            return .copy
         }
-        guard let parsed = InstallMode(rawValue: raw) else {
-            throw SkillHubError.unsupportedInstallMode(raw)
+        if normalized == "auto" || normalized == "symlink" || normalized == "configpatch" || normalized == "config-patch" {
+            return .copy
         }
-        return parsed
+        throw SkillHubError.unsupportedInstallMode(raw)
     }
 }
 

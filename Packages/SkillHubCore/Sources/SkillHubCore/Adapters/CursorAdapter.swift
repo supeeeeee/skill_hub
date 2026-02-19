@@ -3,7 +3,7 @@ import Foundation
 public struct CursorAdapter: ProductAdapter {
     public let id = "cursor"
     public let name = "Cursor"
-    public let supportedInstallModes: [InstallMode] = [.auto, .symlink, .copy, .configPatch]
+    public let supportedInstallModes: [InstallMode] = [.copy]
 
     public init() {}
 

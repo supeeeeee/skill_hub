@@ -7,18 +7,16 @@ public enum InstallMode: String, Codable, CaseIterable, Sendable {
     case configPatch
     case unknown
 
+    public static var allCases: [InstallMode] {
+        [.copy]
+    }
+
     public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
         let rawValue = try container.decode(String.self)
         switch rawValue {
-        case "auto":
-            self = .auto
-        case "symlink":
-            self = .symlink
-        case "copy":
+        case "copy", "auto", "symlink", "configPatch", "config-patch":
             self = .copy
-        case "configPatch", "config-patch":
-            self = .configPatch
         default:
             self = .unknown
         }

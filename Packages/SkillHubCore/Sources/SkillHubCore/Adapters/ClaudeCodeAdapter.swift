@@ -4,8 +4,7 @@ public struct ClaudeCodeAdapter: ProductAdapter {
     public let id = "claude-code"
     public let name = "Claude Code"
     /// Claude Code is expected to read skills from a local directory under `~/.claude/skills`.
-    /// To avoid potential symlink restrictions in downstream tooling, we default to `copy`.
-    public let supportedInstallModes: [InstallMode] = [.auto, .copy, .configPatch]
+    public let supportedInstallModes: [InstallMode] = [.copy]
 
     public init() {}
 
