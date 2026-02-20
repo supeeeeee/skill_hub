@@ -5,7 +5,7 @@ app:
 	cd Packages/SkillHubApp && swift build
 
 run-app:
-	cd Packages/SkillHubApp && swift run
+	cd Packages/SkillHubApp && swift build && open .build/debug/SkillHubApp
 
 test:
 	@echo "No XCTest in this environment; core logic is covered by smoke build."

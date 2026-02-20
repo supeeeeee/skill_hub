@@ -65,13 +65,6 @@ struct ContentView: View {
                 .padding(.top, 16)
                 .padding(.trailing, 16)
         }
-        .background(
-            Button("Toggle Command Palette") {
-                showCommandPalette.toggle()
-            }
-            .keyboardShortcut("k", modifiers: .command)
-            .opacity(0)
-        )
     }
 }
 

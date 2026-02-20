@@ -1,9 +1,6 @@
 import SwiftUI
 import SkillHubCore
 import UniformTypeIdentifiers
-#if os(macOS)
-import AppKit
-#endif
 
 struct ProductsView: View {
     @EnvironmentObject var viewModel: SkillHubViewModel
@@ -69,14 +66,6 @@ struct ProductsView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
             viewModel.loadData()
-        }
-        .onChange(of: showingAddProductSheet) { isPresented in
-            if isPresented {
-                #if os(macOS)
-                NSApp.activate(ignoringOtherApps: true)
-                NSApp.windows.first?.makeKeyAndOrderFront(nil)
-                #endif
-            }
         }
         .sheet(isPresented: $showingAddProductSheet) {
             AddCustomProductSheet { name, id, skillsPath, executableNames, iconName in
@@ -254,6 +243,10 @@ private struct AddCustomProductSheet: View {
                                         .focused($focusedField, equals: .name)
                                         .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
                                 }
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    focusedField = .name
+                                }
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 10)
                                 .background(Color(nsColor: .controlBackgroundColor))
@@ -280,6 +273,10 @@ private struct AddCustomProductSheet: View {
                                             .font(.system(size: 14))
                                             .foregroundStyle(.secondary)
                                     }
+                                }
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    focusedField = .id
                                 }
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 10)

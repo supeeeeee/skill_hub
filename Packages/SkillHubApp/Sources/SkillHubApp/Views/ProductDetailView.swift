@@ -2,6 +2,10 @@ import SwiftUI
 import SkillHubCore
 
 struct ProductDetailView: View {
+    private enum InputField: Hashable {
+        case search
+    }
+
     let product: Product
     @EnvironmentObject var viewModel: SkillHubViewModel
     @State private var setupSkill: InstalledSkillRecord?
@@ -12,6 +16,7 @@ struct ProductDetailView: View {
     @State private var showConfigPathEditor = false
     @State private var editingConfigPath = ""
     @State private var isHoveringHeader = false
+    @FocusState private var focusedField: InputField?
 
     private var currentProduct: Product {
         viewModel.products.first(where: { $0.id == product.id }) ?? product
@@ -290,7 +295,12 @@ struct ProductDetailView: View {
                         .foregroundColor(.secondary)
                     TextField("Search skills...", text: $searchText)
                         .textFieldStyle(.plain)
+                        .focused($focusedField, equals: .search)
                         .frame(width: 200)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    focusedField = .search
                 }
                 .padding(8)
                 .background(Color(nsColor: .controlBackgroundColor))
