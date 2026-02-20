@@ -277,9 +277,17 @@ final class SkillService {
     }
 
     func importSkill(at url: URL) throws -> SkillManifest {
-        let data = try Data(contentsOf: url)
-        let manifest = try JSONDecoder().decode(SkillManifest.self, from: data)
-        try skillStore.upsertSkill(manifest: manifest, manifestPath: url.path)
+        let sourcePath = url.standardizedFileURL.path
+        let manifest: SkillManifest
+
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: sourcePath, isDirectory: &isDirectory), isDirectory.boolValue {
+            manifest = try AgentSkillLoader.loadFromDirectory(URL(fileURLWithPath: sourcePath)).manifest
+        } else {
+            manifest = try AgentSkillLoader.loadManifest(from: URL(fileURLWithPath: sourcePath))
+        }
+
+        try runSkillHub(arguments: ["add", sourcePath], action: "register skill")
         return manifest
     }
 
@@ -305,7 +313,7 @@ final class SkillService {
             try FileSystemUtils.copyItem(from: sourcePath, to: destPath)
         }
 
-        let stagedManifestPath = destPath.appendingPathComponent("skill.json").path
+        let stagedManifestPath = destPath.appendingPathComponent("SKILL.md").path
         try skillStore.upsertSkill(manifest: manifest, manifestPath: stagedManifestPath)
 
         let adapter = try adapterRegistry.adapter(for: productID)
@@ -383,19 +391,10 @@ final class SkillService {
                     continue
                 }
 
-                let candidates = [
-                    folderURL.appendingPathComponent("skill.json"),
-                    folderURL.appendingPathComponent("manifest.json")
-                ]
-
-                for fileURL in candidates {
-                    if let data = try? Data(contentsOf: fileURL),
-                       let found = try? JSONDecoder().decode(SkillManifest.self, from: data),
-                       found.id == manifest.id {
-                        sourceFolder = folderURL
-                        manifestFile = fileURL
-                        break
-                    }
+                if let loaded = try? AgentSkillLoader.loadFromDirectory(folderURL), loaded.manifest.id == manifest.id {
+                    sourceFolder = folderURL
+                    manifestFile = loaded.markdownPath
+                    break
                 }
 
                 if sourceFolder != nil {
@@ -567,24 +566,8 @@ final class SkillService {
                 continue
             }
 
-            let candidates = [
-                folderURL.appendingPathComponent("skill.json"),
-                folderURL.appendingPathComponent("manifest.json")
-            ]
-
-            var recognized = false
-            for fileURL in candidates {
-                if let data = try? Data(contentsOf: fileURL),
-                   let manifest = try? JSONDecoder().decode(SkillManifest.self, from: data),
-                   !manifest.id.isEmpty {
-                    result.insert(manifest.id)
-                    recognized = true
-                    break
-                }
-            }
-
-            if !recognized {
-                result.insert(folderURL.lastPathComponent)
+            if let loaded = try? AgentSkillLoader.loadFromDirectory(folderURL) {
+                result.insert(loaded.manifest.id)
             }
         }
 

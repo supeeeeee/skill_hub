@@ -113,17 +113,8 @@ final class ScanService: @unchecked Sendable {
         for folderURL in contents {
             var isDir: ObjCBool = false
             if fileManager.fileExists(atPath: folderURL.path, isDirectory: &isDir), isDir.boolValue {
-                let candidates = [
-                    folderURL.appendingPathComponent("skill.json"),
-                    folderURL.appendingPathComponent("manifest.json")
-                ]
-
-                for fileURL in candidates {
-                    if let data = try? Data(contentsOf: fileURL),
-                       let manifest = try? JSONDecoder().decode(SkillManifest.self, from: data) {
-                        results.append(manifest)
-                        break
-                    }
+                if let loaded = try? AgentSkillLoader.loadFromDirectory(folderURL) {
+                    results.append(loaded.manifest)
                 }
             }
         }

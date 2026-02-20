@@ -370,7 +370,7 @@ extension CLI {
             return try loadAgentSkillFromDirectory(localURL, originalSource: source)
         }
 
-        guard localURL.lastPathComponent.lowercased() == "skill.md" else {
+        guard localURL.lastPathComponent == "SKILL.md" else {
             throw SkillHubError.invalidManifest("Source must be an Agent Skill directory containing SKILL.md or a SKILL.md file")
         }
         return try loadAgentSkillFromMarkdown(localURL)
@@ -381,7 +381,7 @@ extension CLI {
             throw SkillHubError.invalidManifest("Invalid URL: \(urlString)")
         }
 
-        guard url.path.lowercased().hasSuffix("/skill.md") else {
+        guard url.path.hasSuffix("/SKILL.md") else {
             throw SkillHubError.invalidManifest("HTTP source must point to a raw SKILL.md file, or use a git/tree source")
         }
 
@@ -487,143 +487,15 @@ extension CLI {
         return (cloneURL, branch, subpath)
     }
 
-    private func locateSkillMarkdown(in root: URL) throws -> URL {
-        let preferredNames = ["SKILL.md", "skill.md"]
-        let fm = FileManager.default
-
-        for name in preferredNames {
-            let candidate = root.appendingPathComponent(name)
-            if fm.fileExists(atPath: candidate.path) {
-                return candidate
-            }
-        }
-
-        guard let enumerator = fm.enumerator(
-            at: root,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            throw SkillHubError.invalidManifest("Could not read skill directory: \(root.path)")
-        }
-
-        var matches: [URL] = []
-        for case let fileURL as URL in enumerator {
-            let name = fileURL.lastPathComponent
-            guard preferredNames.contains(name) else {
-                continue
-            }
-
-            matches.append(fileURL)
-        }
-
-        if matches.isEmpty {
-            throw SkillHubError.invalidManifest("No SKILL.md found in source: \(root.path)")
-        }
-
-        if matches.count > 1 {
-            let listed = matches.map(\.path).sorted().joined(separator: ", ")
-            throw SkillHubError.invalidManifest("Multiple SKILL.md files found. Provide a specific skill directory (for GitHub use /tree/<branch>/<path>): \(listed)")
-        }
-
-        return matches[0]
-    }
-
     private func loadAgentSkillFromDirectory(_ directory: URL, originalSource: String) throws -> (SkillManifest, String) {
-        let skillMarkdown = try locateSkillMarkdown(in: directory)
-        let loaded = try loadAgentSkillFromMarkdown(skillMarkdown)
-        print("Resolved Agent Skill \(loaded.0.id) from \(originalSource)")
-        return loaded
+        let loaded = try AgentSkillLoader.loadFromDirectory(directory)
+        print("Resolved Agent Skill \(loaded.manifest.id) from \(originalSource)")
+        return (loaded.manifest, loaded.markdownPath.path)
     }
 
     private func loadAgentSkillFromMarkdown(_ markdownURL: URL) throws -> (SkillManifest, String) {
-        let markdown = try String(contentsOf: markdownURL, encoding: .utf8)
-        let frontmatter = try parseFrontmatter(from: markdown)
-
-        guard let skillNameRaw = frontmatter["name"], !skillNameRaw.isEmpty else {
-            throw SkillHubError.invalidManifest("SKILL.md frontmatter requires non-empty 'name'")
-        }
-        guard let descriptionRaw = frontmatter["description"], !descriptionRaw.isEmpty else {
-            throw SkillHubError.invalidManifest("SKILL.md frontmatter requires non-empty 'description'")
-        }
-
-        let skillName = skillNameRaw.trimmingCharacters(in: .whitespacesAndNewlines)
-        let description = descriptionRaw.trimmingCharacters(in: .whitespacesAndNewlines)
-        try validateAgentSkillName(skillName)
-        if description.count > 1024 {
-            throw SkillHubError.invalidManifest("SKILL.md frontmatter 'description' must be 1-1024 characters")
-        }
-
-        let expectedDirectoryName = markdownURL.deletingLastPathComponent().lastPathComponent
-        if expectedDirectoryName != skillName {
-            throw SkillHubError.invalidManifest("SKILL.md 'name' must match parent directory name. name=\(skillName), directory=\(expectedDirectoryName)")
-        }
-
-        let manifest = SkillManifest(
-            id: skillName,
-            name: skillName,
-            version: "1.0.0",
-            summary: description,
-            entrypoint: markdownURL.lastPathComponent,
-            tags: [],
-            adapters: []
-        )
-
-        let manifestPath = markdownURL.deletingLastPathComponent().appendingPathComponent("skill.json")
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(manifest).write(to: manifestPath)
-        return (manifest, manifestPath.path)
-    }
-
-    private func parseFrontmatter(from markdown: String) throws -> [String: String] {
-        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        guard lines.count >= 3, lines[0].trimmingCharacters(in: .whitespacesAndNewlines) == "---" else {
-            throw SkillHubError.invalidManifest("SKILL.md must start with YAML frontmatter delimited by '---'")
-        }
-
-        var index = 1
-        var fields: [String: String] = [:]
-        var foundClosing = false
-        while index < lines.count {
-            let rawLine = lines[index]
-            let trimmed = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed == "---" {
-                foundClosing = true
-                break
-            }
-
-            if !trimmed.isEmpty, !trimmed.hasPrefix("#") {
-                let parts = rawLine.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
-                if parts.count == 2 {
-                    let key = parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                    let value = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
-                        .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-                    if !key.isEmpty {
-                        fields[key] = value
-                    }
-                }
-            }
-            index += 1
-        }
-
-        if !foundClosing {
-            throw SkillHubError.invalidManifest("SKILL.md frontmatter must end with '---'")
-        }
-
-        return fields
-    }
-
-    private func validateAgentSkillName(_ skillName: String) throws {
-        if skillName.count < 1 || skillName.count > 64 {
-            throw SkillHubError.invalidManifest("SKILL.md frontmatter 'name' must be 1-64 characters")
-        }
-
-        let pattern = "^[a-z0-9]+(?:-[a-z0-9]+)*$"
-        let range = NSRange(location: 0, length: skillName.utf16.count)
-        let regex = try NSRegularExpression(pattern: pattern)
-        if regex.firstMatch(in: skillName, options: [], range: range) == nil {
-            throw SkillHubError.invalidManifest("SKILL.md frontmatter 'name' must use lowercase letters, numbers, and single hyphens")
-        }
+        let manifest = try AgentSkillLoader.loadManifest(from: markdownURL)
+        return (manifest, markdownURL.path)
     }
 
     private func stageSkillInStore(skillID: String, sourceDirectory: URL) throws -> URL {
@@ -680,5 +552,158 @@ extension CLI {
 
     private func stagedSkillPath(skillID: String) -> URL {
         SkillHubPaths.defaultSkillsDirectory().appendingPathComponent(skillID, isDirectory: true)
+    }
+}
+
+private enum AgentSkillLoader {
+    static func loadFromDirectory(_ directory: URL) throws -> (manifest: SkillManifest, markdownPath: URL) {
+        let markdown = try locateSkillMarkdown(in: directory)
+        let manifest = try loadManifest(from: markdown)
+        return (manifest, markdown)
+    }
+
+    static func loadManifest(from markdownURL: URL) throws -> SkillManifest {
+        guard markdownURL.lastPathComponent == "SKILL.md" else {
+            throw SkillHubError.invalidManifest("Entrypoint must be SKILL.md")
+        }
+
+        let markdown = try String(contentsOf: markdownURL, encoding: .utf8)
+        let parsed = try parseFrontmatterAndBody(from: markdown)
+
+        guard let nameRaw = parsed.frontmatter["name"], !nameRaw.isEmpty else {
+            throw SkillHubError.invalidManifest("SKILL.md frontmatter requires non-empty 'name'")
+        }
+        guard let descriptionRaw = parsed.frontmatter["description"], !descriptionRaw.isEmpty else {
+            throw SkillHubError.invalidManifest("SKILL.md frontmatter requires non-empty 'description'")
+        }
+
+        let name = nameRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let description = descriptionRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        try validateSkillName(name)
+        if description.count > 1024 {
+            throw SkillHubError.invalidManifest("SKILL.md frontmatter 'description' must be 1-1024 characters")
+        }
+
+        if parsed.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw SkillHubError.invalidManifest("SKILL.md body must not be empty")
+        }
+
+        let parentName = markdownURL.deletingLastPathComponent().lastPathComponent
+        if parentName != name {
+            throw SkillHubError.invalidManifest("SKILL.md 'name' must match parent directory name. name=\(name), directory=\(parentName)")
+        }
+
+        return SkillManifest(
+            id: name,
+            name: name,
+            version: "1.0.0",
+            summary: description,
+            entrypoint: "SKILL.md",
+            tags: [],
+            adapters: []
+        )
+    }
+
+    private static func locateSkillMarkdown(in root: URL) throws -> URL {
+        let fm = FileManager.default
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: root.path, isDirectory: &isDirectory) else {
+            throw SkillHubError.invalidManifest("Source not found: \(root.path)")
+        }
+
+        if !isDirectory.boolValue {
+            guard root.lastPathComponent == "SKILL.md" else {
+                throw SkillHubError.invalidManifest("Source file must be SKILL.md")
+            }
+            return root
+        }
+
+        guard let enumerator = fm.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else {
+            throw SkillHubError.invalidManifest("Could not read skill directory: \(root.path)")
+        }
+
+        var matches: [URL] = []
+        for case let fileURL as URL in enumerator {
+            guard fileURL.lastPathComponent == "SKILL.md" else { continue }
+            if let resourceValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey]),
+               resourceValues.isRegularFile == true
+            {
+                matches.append(fileURL)
+            }
+        }
+
+        if matches.isEmpty {
+            throw SkillHubError.invalidManifest("No SKILL.md found in source: \(root.path)")
+        }
+
+        if matches.count > 1 {
+            let listed = matches.map(\.path).sorted().joined(separator: ", ")
+            throw SkillHubError.invalidManifest("Multiple SKILL.md files found. Provide a specific skill directory: \(listed)")
+        }
+
+        return matches[0]
+    }
+
+    private static func parseFrontmatterAndBody(from markdown: String) throws -> (frontmatter: [String: String], body: String) {
+        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        guard lines.count >= 3, lines[0].trimmingCharacters(in: .whitespacesAndNewlines) == "---" else {
+            throw SkillHubError.invalidManifest("SKILL.md must start with YAML frontmatter delimited by '---'")
+        }
+
+        var index = 1
+        var fields: [String: String] = [:]
+        var foundClosing = false
+        while index < lines.count {
+            let rawLine = lines[index]
+            let trimmed = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed == "---" {
+                foundClosing = true
+                break
+            }
+
+            if !trimmed.isEmpty, !trimmed.hasPrefix("#") {
+                let parts = rawLine.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+                if parts.count != 2 {
+                    throw SkillHubError.invalidManifest("Invalid frontmatter line: \(rawLine)")
+                }
+                let key = parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                var value = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                value = value.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+
+                if key.isEmpty {
+                    throw SkillHubError.invalidManifest("Frontmatter key cannot be empty")
+                }
+                if fields[key] != nil {
+                    throw SkillHubError.invalidManifest("Duplicate frontmatter key: \(key)")
+                }
+                fields[key] = value
+            }
+            index += 1
+        }
+
+        if !foundClosing {
+            throw SkillHubError.invalidManifest("SKILL.md frontmatter must end with '---'")
+        }
+
+        let bodyLines = Array(lines.suffix(from: index + 1))
+        return (fields, bodyLines.joined(separator: "\n"))
+    }
+
+    private static func validateSkillName(_ skillName: String) throws {
+        if skillName.count < 1 || skillName.count > 64 {
+            throw SkillHubError.invalidManifest("SKILL.md frontmatter 'name' must be 1-64 characters")
+        }
+
+        let pattern = "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        let range = NSRange(location: 0, length: skillName.utf16.count)
+        let regex = try NSRegularExpression(pattern: pattern)
+        if regex.firstMatch(in: skillName, options: [], range: range) == nil {
+            throw SkillHubError.invalidManifest("SKILL.md frontmatter 'name' must use lowercase letters, numbers, and single hyphens")
+        }
     }
 }

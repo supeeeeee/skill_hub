@@ -1,5 +1,6 @@
 import SwiftUI
 import SkillHubCore
+import UniformTypeIdentifiers
 
 struct SkillsView: View {
     @EnvironmentObject var viewModel: SkillHubViewModel
@@ -90,7 +91,7 @@ struct SkillsView: View {
         .sheet(isPresented: $showURLInput) {
             RemoteInputView(
                 title: "Register from URL",
-                placeholder: "https://example.com/skill.json",
+                placeholder: "https://example.com/SKILL.md",
                 buttonLabel: "Register",
                 input: $remoteURL,
                 onSubmit: {
@@ -125,7 +126,7 @@ struct SkillsView: View {
                 }
             )
         }
-        .fileImporter(isPresented: $isImporting, allowedContentTypes: [.json]) { result in
+        .fileImporter(isPresented: $isImporting, allowedContentTypes: [.folder, .plainText]) { result in
             switch result {
             case .success(let url):
                 guard url.startAccessingSecurityScopedResource() else {
@@ -171,7 +172,7 @@ struct RegisterSkillOptionsView: View {
             VStack(spacing: 16) {
                 RegisterOptionButton(
                     title: "Local File",
-                    subtitle: "Select a manifest.json from your device",
+                    subtitle: "Select a skill folder or SKILL.md file",
                     iconName: "doc.text",
                     color: .blue,
                     action: onLocalFile
@@ -179,7 +180,7 @@ struct RegisterSkillOptionsView: View {
                 
                 RegisterOptionButton(
                     title: "From URL",
-                    subtitle: "Download manifest from a direct URL",
+                    subtitle: "Download SKILL.md from a direct URL",
                     iconName: "link",
                     color: .purple,
                     action: onFromURL

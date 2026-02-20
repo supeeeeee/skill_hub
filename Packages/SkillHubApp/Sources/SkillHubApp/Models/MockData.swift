@@ -23,7 +23,7 @@ struct MockData {
                     AdapterConfig(productID: "cursor", installMode: .symlink)
                 ]
             ),
-            manifestPath: "/path/to/git-lfs/skill.json",
+            manifestPath: "/path/to/git-lfs/SKILL.md",
             installedProducts: ["vscode"],
             enabledProducts: ["vscode"],
             lastInstallModeByProduct: ["vscode": .symlink]
@@ -40,7 +40,7 @@ struct MockData {
                     AdapterConfig(productID: "windsurf", installMode: .symlink)
                 ]
             ),
-            manifestPath: "/path/to/docker-helper/skill.json",
+            manifestPath: "/path/to/docker-helper/SKILL.md",
             installedProducts: ["vscode", "windsurf"],
             enabledProducts: ["vscode", "windsurf"],
             lastInstallModeByProduct: ["vscode": .copy, "windsurf": .symlink]
@@ -57,7 +57,7 @@ struct MockData {
                     AdapterConfig(productID: "cursor", installMode: .symlink)
                 ]
             ),
-            manifestPath: "/path/to/swift-format/skill.json",
+            manifestPath: "/path/to/swift-format/SKILL.md",
             installedProducts: [],
             enabledProducts: [],
             lastInstallModeByProduct: [:]
