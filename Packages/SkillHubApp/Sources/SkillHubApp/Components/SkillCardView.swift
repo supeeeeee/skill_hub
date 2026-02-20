@@ -74,6 +74,8 @@ struct ProductStatusView: View {
 struct SkillCardView: View {
     let skill: InstalledSkillRecord
     
+    @State private var isHovered = false
+    
     private let productIcons: [String: String] = [
         "openclaw": "terminal.fill",
         "opencode": "hammer.fill",
@@ -112,10 +114,15 @@ struct SkillCardView: View {
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.primary.opacity(0.05), lineWidth: 1)
+                .stroke(Color.primary.opacity(isHovered ? 0.1 : 0.05), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.03), radius: 4, x: 0, y: 2)
-        .contentShape(Rectangle()) // Improves hover/click area
+        .shadow(color: Color.black.opacity(isHovered ? 0.08 : 0.02), radius: isHovered ? 8 : 2, x: 0, y: isHovered ? 2 : 1)
+        .scaleEffect(isHovered ? 1.005 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
+        .onHover { hover in
+            isHovered = hover
+        }
+        .contentShape(Rectangle()) 
     }
     
     private var nameAndVersionView: some View {
@@ -126,13 +133,12 @@ struct SkillCardView: View {
                 .lineLimit(1)
             
             Text("v\(skill.manifest.version)")
-                .font(.caption2)
-                .fontDesign(.monospaced)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
                 .background(Color.secondary.opacity(0.1))
-                .cornerRadius(4)
+                .clipShape(Capsule())
         }
     }
     
@@ -143,13 +149,12 @@ struct SkillCardView: View {
                     Image(systemName: "arrow.triangle.2.circlepath")
                     Text("Update")
                 }
-                .font(.caption2)
-                .fontWeight(.bold)
+                .font(.caption2.bold())
                 .foregroundColor(.white)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
                 .background(Color.blue)
-                .cornerRadius(4)
+                .clipShape(Capsule())
                 .help("Update available")
             }
 
@@ -204,12 +209,12 @@ struct SkillCardView: View {
                 HStack(spacing: 6) {
                     ForEach(skill.manifest.tags.prefix(3), id: \.self) { tag in
                         Text("#\(tag)")
-                            .font(.caption2)
+                            .font(.system(size: 10, weight: .medium))
                             .foregroundColor(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
                             .background(Color.secondary.opacity(0.05))
-                            .cornerRadius(4)
+                            .clipShape(Capsule())
                     }
                 }
             }

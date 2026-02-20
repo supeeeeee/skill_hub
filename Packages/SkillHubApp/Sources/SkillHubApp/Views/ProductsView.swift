@@ -1,17 +1,25 @@
 import SwiftUI
 import SkillHubCore
+import UniformTypeIdentifiers
+#if os(macOS)
+import AppKit
+#endif
 
 struct ProductsView: View {
     @EnvironmentObject var viewModel: SkillHubViewModel
     @State private var showingAddProductSheet = false
     @State private var productPendingRemoval: Product?
     
+    let columns = [
+        GridItem(.adaptive(minimum: 360, maximum: 600), spacing: 20)
+    ]
+    
     var body: some View {
         ZStack {
             if viewModel.isLoading {
                 VStack {
                     Spacer()
-                    ProgressView("Loading...")
+                    ProgressView("Loading Products...")
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -23,7 +31,7 @@ struct ProductsView: View {
                 )
             } else {
                 ScrollView {
-                    VStack(spacing: 12) {
+                    LazyVGrid(columns: columns, spacing: 20) {
                         ForEach(viewModel.products) { product in
                             NavigationLink(destination: ProductDetailView(product: product)) {
                                 ProductCardView(
@@ -44,7 +52,7 @@ struct ProductsView: View {
                             }
                         }
                     }
-                    .padding()
+                    .padding(24)
                 }
             }
         }
@@ -61,6 +69,14 @@ struct ProductsView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
             viewModel.loadData()
+        }
+        .onChange(of: showingAddProductSheet) { isPresented in
+            if isPresented {
+                #if os(macOS)
+                NSApp.activate(ignoringOtherApps: true)
+                NSApp.windows.first?.makeKeyAndOrderFront(nil)
+                #endif
+            }
         }
         .sheet(isPresented: $showingAddProductSheet) {
             AddCustomProductSheet { name, id, skillsPath, executableNames, iconName in
@@ -103,6 +119,11 @@ struct ProductsView: View {
 }
 
 private struct AddCustomProductSheet: View {
+    private enum InputField: Hashable {
+        case name
+        case id
+    }
+
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var id = ""
@@ -111,6 +132,8 @@ private struct AddCustomProductSheet: View {
     @State private var iconName = ""
     @State private var showAdvanced = false
     @State private var idWasManuallyEdited = false
+    @State private var showFileImporter = false
+    @FocusState private var focusedField: InputField?
 
     let onSave: (_ name: String, _ id: String, _ skillsPath: String, _ executableNames: String, _ iconName: String?) -> Void
 
@@ -134,139 +157,203 @@ private struct AddCustomProductSheet: View {
         iconName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var idError: String? {
-        if effectiveID.isEmpty {
-            return "ID is required"
-        }
-        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789-_")
-        if effectiveID.rangeOfCharacter(from: allowed.inverted) != nil {
-            return "Use lowercase letters, digits, '-' or '_'"
-        }
-        return nil
-    }
-
-    private var pathError: String? {
-        if normalizedPath.isEmpty {
-            return "Skills directory is required"
-        }
-        if !normalizedPath.hasPrefix("/") {
-            return "Please use an absolute path"
-        }
-        return nil
-    }
-
     private var canSave: Bool {
-        !normalizedName.isEmpty && idError == nil && pathError == nil
+        !normalizedName.isEmpty && !effectiveID.isEmpty && !normalizedPath.isEmpty
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Add a custom product")
-                            .font(.title2.weight(.semibold))
-                        Text("Only 3 things are required: name, ID, and skills folder.")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
+        VStack(spacing: 0) {
+            ZStack {
+                Text("Add Product")
+                    .font(.headline)
+                
+                HStack {
+                    Spacer()
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
                     }
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(spacing: 10) {
-                            Image(systemName: normalizedIcon.isEmpty ? "shippingbox.fill" : normalizedIcon)
-                                .font(.system(size: 18, weight: .semibold))
-                                .frame(width: 34, height: 34)
-                                .background(Color.accentColor.opacity(0.12))
-                                .foregroundColor(.accentColor)
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(normalizedName.isEmpty ? "Product Name" : normalizedName)
-                                    .font(.headline)
-                                Text(effectiveID.isEmpty ? "product-id" : effectiveID)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-
-                            Spacer()
-
-                            Text("CUSTOM")
-                                .font(.caption2.bold())
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(Color.accentColor.opacity(0.12))
-                                .foregroundColor(.accentColor)
-                                .cornerRadius(4)
-                        }
-
-                        Text(normalizedPath.isEmpty ? "Skills directory not set" : normalizedPath)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    .padding(14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color(nsColor: .controlBackgroundColor))
-                    )
-                    .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)
-
-                    Group {
-                        labeledField(title: "Product Name", placeholder: "My Editor", text: $name)
-
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text("Product ID")
-                                    .font(.subheadline.weight(.medium))
-                                Spacer()
-                                if !normalizedName.isEmpty {
-                                    Button("Use Suggested") {
-                                        id = suggestedID(from: normalizedName)
-                                        idWasManuallyEdited = false
-                                    }
-                                    .buttonStyle(.plain)
-                                    .font(.caption)
-                                    .foregroundColor(.accentColor)
-                                }
-                            }
-                            TextField("my-editor", text: $id)
-                                .textFieldStyle(.roundedBorder)
-                                .autocorrectionDisabled()
-                            validationText(idError ?? "Used in bindings and config keys", isError: idError != nil)
-                        }
-
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Skills Directory")
-                                .font(.subheadline.weight(.medium))
-                            TextField("/absolute/path/to/skills", text: $skillsPath)
-                                .textFieldStyle(.roundedBorder)
-                            validationText(pathError ?? "SkillHub copies enabled skills into this folder", isError: pathError != nil)
-                        }
-
-                        DisclosureGroup("Advanced options (optional)", isExpanded: $showAdvanced) {
-                            VStack(alignment: .leading, spacing: 12) {
-                                labeledField(title: "Executable Names", placeholder: "editor, my-editor-cli", text: $executableNames, helper: "Comma-separated names used for installation detection")
-                                labeledField(title: "SF Symbol Icon", placeholder: "terminal", text: $iconName, helper: "Any valid SF Symbol name")
-                            }
-                            .padding(.top, 8)
-                        }
-                    }
+                    .buttonStyle(.plain)
                 }
-                .padding(18)
             }
-            .navigationTitle("Add Custom Product")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+            .padding()
+            
+            ScrollView {
+                VStack(spacing: 32) {
+                    VStack(spacing: 16) {
+                        Text("PREVIEW")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(.regularMaterial)
+                            .clipShape(Capsule())
+                        
+                        HStack(spacing: 16) {
+                           ZStack {
+                               RoundedRectangle(cornerRadius: 12)
+                                   .fill(Color.secondary.opacity(0.1))
+                                   .frame(width: 48, height: 48)
+                               Image(systemName: normalizedIcon.isEmpty ? "cube.box.fill" : normalizedIcon)
+                                   .font(.system(size: 24))
+                                   .foregroundStyle(.secondary)
+                           }
+                           
+                           VStack(alignment: .leading, spacing: 4) {
+                               Text(normalizedName.isEmpty ? "Product Name" : normalizedName)
+                                   .font(.headline)
+                                   .foregroundStyle(.primary)
+                               Text(normalizedPath.isEmpty ? "Path not set" : normalizedPath)
+                                   .font(.caption)
+                                   .foregroundStyle(.secondary)
+                                   .lineLimit(1)
+                                   .truncationMode(.middle)
+                           }
+                           
+                           Spacer()
+                           
+                           Text("CUSTOM")
+                               .font(.system(size: 10, weight: .bold))
+                               .padding(.horizontal, 6)
+                               .padding(.vertical, 2)
+                               .background(Color.accentColor.opacity(0.1))
+                               .foregroundStyle(Color.accentColor)
+                               .clipShape(Capsule())
+                        }
+                        .padding(16)
+                        .background(Color(nsColor: .controlBackgroundColor))
+                        .cornerRadius(12)
+                        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.primary.opacity(0.05), lineWidth: 1)
+                        )
+                        .padding(.horizontal)
+                    }
+                    
+                    VStack(spacing: 24) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Identity")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+                                .padding(.leading, 4)
+                            
+                            VStack(spacing: 12) {
+                                HStack(alignment: .center, spacing: 8) {
+                                    Image(systemName: "tag")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 24, alignment: .center)
+
+                                    TextField("Product Name", text: $name)
+                                        .textFieldStyle(.plain)
+                                        .font(.system(size: 13, weight: .regular))
+                                        .focused($focusedField, equals: .name)
+                                        .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .background(Color(nsColor: .controlBackgroundColor))
+                                .cornerRadius(8)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(focusedField == .name ? Color.accentColor.opacity(0.45) : Color.primary.opacity(0.1), lineWidth: 1)
+                                )
+
+                                HStack(alignment: .center, spacing: 8) {
+                                    Image(systemName: "fingerprint")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 24, alignment: .center)
+
+                                    TextField("product-id", text: $id)
+                                        .textFieldStyle(.plain)
+                                        .font(.system(size: 13, weight: .regular, design: .monospaced))
+                                        .focused($focusedField, equals: .id)
+                                        .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
+
+                                    if !idWasManuallyEdited && !name.isEmpty {
+                                        Image(systemName: "wand.and.stars")
+                                            .font(.system(size: 14))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .background(Color(nsColor: .controlBackgroundColor))
+                                .cornerRadius(8)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(focusedField == .id ? Color.accentColor.opacity(0.45) : Color.primary.opacity(0.1), lineWidth: 1)
+                                )
+                            }
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                             Text("Configuration")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+                                .padding(.leading, 4)
+                                
+                            PathPickerField(
+                                placeholder: "Skills Folder Location",
+                                text: $skillsPath,
+                                actionLabel: "Browse"
+                            ) {
+                                showFileImporter = true
+                            }
+                            
+                            HStack(spacing: 12) {
+                                CleanTextField(
+                                    icon: "terminal",
+                                    placeholder: "Executables (cmd, cli)",
+                                    text: $executableNames
+                                )
+                                
+                                CleanTextField(
+                                    icon: "star",
+                                    placeholder: "SF Symbol",
+                                    text: $iconName
+                                )
+                                .frame(width: 140)
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
+                .padding(.bottom, 30)
+            }
+            .background(Color(nsColor: .windowBackgroundColor))
+            
+            VStack(spacing: 0) {
+                Divider()
+                HStack {
+                    Button("Cancel") { dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                        .buttonStyle(.bordered)
+                        
+                    Spacer()
+                    
+                    Button("Add Product") {
                         onSave(normalizedName, effectiveID, normalizedPath, executableNames, normalizedIcon.isEmpty ? nil : normalizedIcon)
                         dismiss()
                     }
+                    .buttonStyle(.borderedProminent)
                     .disabled(!canSave)
+                    .keyboardShortcut(.defaultAction)
                 }
+                .padding()
+                .background(.regularMaterial)
+            }
+        }
+        .frame(width: 500, height: 600)
+        .onAppear {
+            DispatchQueue.main.async {
+                focusedField = .name
             }
         }
         .onChange(of: name) { newValue in
@@ -288,27 +375,16 @@ private struct AddCustomProductSheet: View {
                 idWasManuallyEdited = cleaned != suggestedID(from: normalizedName)
             }
         }
-        .frame(minWidth: 560, minHeight: 500)
-    }
-
-    private func labeledField(title: String, placeholder: String, text: Binding<String>, helper: String? = nil) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.subheadline.weight(.medium))
-            TextField(placeholder, text: text)
-                .textFieldStyle(.roundedBorder)
-            if let helper {
-                Text(helper)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+        .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first {
+                    skillsPath = url.path(percentEncoded: false)
+                }
+            case .failure(let error):
+                print("Error selecting folder: \(error.localizedDescription)")
             }
         }
-    }
-
-    private func validationText(_ text: String, isError: Bool) -> some View {
-        Text(text)
-            .font(.caption)
-            .foregroundColor(isError ? .red : .secondary)
     }
 
     private func suggestedID(from name: String) -> String {
@@ -328,5 +404,42 @@ private struct AddCustomProductSheet: View {
         }
 
         return result.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    }
+}
+
+private struct PathPickerField: View {
+    let placeholder: String
+    @Binding var text: String
+    let actionLabel: String
+    let onAction: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            Image(systemName: "folder")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, alignment: .center)
+
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13, weight: .regular))
+                .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
+
+            Divider()
+                .frame(width: 1, height: 18)
+
+            Button(actionLabel, action: onAction)
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+        )
     }
 }

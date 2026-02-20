@@ -12,13 +12,17 @@ struct EmptyStateView: View {
             Image(systemName: iconName)
                 .font(.system(size: 48))
                 .foregroundColor(.secondary)
+            
             Text(title)
                 .font(.title2)
                 .fontWeight(.bold)
+                .foregroundColor(.primary)
+            
             Text(message)
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
+                .frame(maxWidth: 300)
             
             if let action = action, let label = actionLabel {
                 Button(action: action) {
@@ -31,7 +35,8 @@ struct EmptyStateView: View {
                 .padding(.top, 8)
             }
         }
-        .padding()
+        .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 }

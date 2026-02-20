@@ -11,9 +11,8 @@ struct SkillsView: View {
     @State private var remoteURL = ""
     @State private var gitURL = ""
     
-    // Improved Grid Layout
     let columns = [
-        GridItem(.adaptive(minimum: 340, maximum: 600), spacing: 24)
+        GridItem(.adaptive(minimum: 360, maximum: 600), spacing: 20)
     ]
     
     var body: some View {
@@ -37,7 +36,7 @@ struct SkillsView: View {
                 )
             } else {
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 24) {
+                    LazyVGrid(columns: columns, spacing: 20) {
                         ForEach(viewModel.skills) { skill in
                             NavigationLink(destination: SkillDetailView(skill: skill)) {
                                 SkillCardView(skill: skill)
@@ -47,7 +46,7 @@ struct SkillsView: View {
                     }
                     .padding(24)
                 }
-                .background(Color(nsColor: .windowBackgroundColor)) // Ensure consistent background
+                .background(Color(nsColor: .windowBackgroundColor))
             }
         }
         .navigationTitle("Skills Library")
@@ -93,6 +92,7 @@ struct SkillsView: View {
                 title: "Register from URL",
                 placeholder: "https://example.com/SKILL.md",
                 buttonLabel: "Register",
+                icon: "link",
                 input: $remoteURL,
                 onSubmit: {
                     if URL(string: remoteURL) != nil, remoteURL.hasPrefix("http") {
@@ -112,6 +112,7 @@ struct SkillsView: View {
                 title: "Register from GitHub",
                 placeholder: "git@github.com:user/skill.git",
                 buttonLabel: "Clone & Register",
+                icon: "chevron.left.forwardslash.chevron.right",
                 input: $gitURL,
                 onSubmit: {
                     if !gitURL.isEmpty {
@@ -150,25 +151,23 @@ struct RegisterSkillOptionsView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            HStack {
+            ZStack {
                 Text("Register Skill")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                Spacer()
-                Button(action: { dismiss() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.secondary)
-                        .font(.title3)
+                    .font(.headline)
+                
+                HStack {
+                    Spacer()
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
-            .padding(20)
-            .background(Color(nsColor: .windowBackgroundColor))
+            .padding()
+            .background(.ultraThinMaterial)
             
-            Divider()
-            
-            // Options List
             VStack(spacing: 16) {
                 RegisterOptionButton(
                     title: "Local File",
@@ -195,9 +194,9 @@ struct RegisterSkillOptionsView: View {
                 )
             }
             .padding(24)
+            .background(Color(nsColor: .windowBackgroundColor))
         }
-        .frame(width: 420)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .frame(width: 440)
     }
 }
 
@@ -214,9 +213,9 @@ struct RegisterOptionButton: View {
         Button(action: action) {
             HStack(spacing: 16) {
                 ZStack {
-                    Circle()
+                    RoundedRectangle(cornerRadius: 12)
                         .fill(color.opacity(0.1))
-                        .frame(width: 44, height: 44)
+                        .frame(width: 48, height: 48)
                     
                     Image(systemName: iconName)
                         .font(.title3)
@@ -240,11 +239,14 @@ struct RegisterOptionButton: View {
             }
             .padding(12)
             .background(isHovered ? Color.secondary.opacity(0.05) : Color(nsColor: .controlBackgroundColor))
-            .cornerRadius(10)
+            .cornerRadius(12)
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.secondary.opacity(0.1), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.primary.opacity(isHovered ? 0.1 : 0.05), lineWidth: 1)
             )
+            .shadow(color: Color.black.opacity(isHovered ? 0.05 : 0), radius: 4, x: 0, y: 2)
+            .scaleEffect(isHovered ? 1.005 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -257,35 +259,75 @@ struct RemoteInputView: View {
     let title: String
     let placeholder: String
     let buttonLabel: String
+    let icon: String
     @Binding var input: String
     let onSubmit: () -> Void
     let onCancel: () -> Void
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        VStack(spacing: 20) {
-            Text(title)
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            TextField(placeholder, text: $input)
-                .textFieldStyle(.roundedBorder)
-            
-            HStack {
-                Button("Cancel") {
-                    dismiss()
-                    onCancel()
+        VStack(spacing: 0) {
+            ZStack {
+                Text(title)
+                    .font(.headline)
+                
+                HStack {
+                    Spacer()
+                    Button(action: { 
+                        dismiss()
+                        onCancel()
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
+            }
+            .padding()
+            .background(.ultraThinMaterial)
+            
+            VStack(spacing: 24) {
+                VStack(spacing: 8) {
+                    CleanTextField(
+                        icon: icon,
+                        placeholder: placeholder,
+                        text: $input
+                    )
+                    
+                    Text("Enter the full URL to proceed.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.leading, 4)
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 24)
+                .padding(.bottom, 24)
+            }
+            .background(Color(nsColor: .windowBackgroundColor))
+            
+            VStack(spacing: 0) {
+                Divider()
+                HStack {
+                    Button("Cancel") { 
+                        dismiss()
+                        onCancel()
+                    }
+                    .keyboardShortcut(.cancelAction)
                     .buttonStyle(.bordered)
-                
-                Spacer()
-                
-                Button(buttonLabel, action: onSubmit)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(input.isEmpty)
+                    
+                    Spacer()
+                    
+                    Button(buttonLabel, action: onSubmit)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(input.isEmpty)
+                        .keyboardShortcut(.defaultAction)
+                }
+                .padding()
+                .background(.regularMaterial)
             }
         }
-        .padding()
-        .frame(width: 400)
+        .frame(width: 440)
     }
 }
