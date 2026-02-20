@@ -309,10 +309,9 @@ final class SkillService {
         try skillStore.upsertSkill(manifest: manifest, manifestPath: stagedManifestPath)
 
         let adapter = try adapterRegistry.adapter(for: productID)
-        let finalMode = try adapter.install(skill: manifest, mode: mode)
-        try skillStore.markInstalled(skillID: manifest.id, productID: productID, installMode: finalMode)
-
+        let finalMode = try adapter.resolveInstallMode(mode)
         try adapter.enable(skillID: manifest.id, mode: finalMode)
+        try skillStore.markInstalled(skillID: manifest.id, productID: productID, installMode: finalMode)
         try skillStore.setEnabled(skillID: manifest.id, productID: productID, enabled: true)
     }
 

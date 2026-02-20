@@ -100,7 +100,7 @@ class SkillHubViewModel: ObservableObject {
         switch type {
         case .success:
             if let parsed = parseInstalledMessage(trimmed) {
-                normalized = "Installed \(parsed.skill) on \(parsed.product)"
+                normalized = "Enabled \(parsed.skill) on \(parsed.product)"
             } else if let parsed = parseEnabledMessage(trimmed) {
                 normalized = "Enabled \(parsed.skill) on \(parsed.product)"
             } else {
@@ -119,7 +119,7 @@ class SkillHubViewModel: ObservableObject {
     }
 
     private func parseInstalledMessage(_ message: String) -> (skill: String, product: String)? {
-        let prefix = "Successfully installed and enabled "
+        let prefix = "Successfully enabled "
         guard message.hasPrefix(prefix) else { return nil }
         let body = String(message.dropFirst(prefix.count))
         let separator = " for "
@@ -167,7 +167,7 @@ class SkillHubViewModel: ObservableObject {
     func installSkill(manifest: SkillManifest, productID: String, mode: InstallMode = .copy) async -> (success: Bool, message: String) {
 
         do {
-            log("Starting installation of \(manifest.name) for \(productID)...", type: .info)
+            log("Starting enable of \(manifest.name) for \(productID)...", type: .info)
 
             try skillService.installSkill(
                 manifest: manifest,
@@ -176,7 +176,7 @@ class SkillHubViewModel: ObservableObject {
                 currentSkills: skills
             )
 
-            let successMsg = "Successfully installed and enabled \(manifest.name) for \(productID)"
+            let successMsg = "Successfully enabled \(manifest.name) for \(productID)"
             log(successMsg, type: .success)
 
             // Refresh data
@@ -185,14 +185,14 @@ class SkillHubViewModel: ObservableObject {
             return (true, successMsg)
 
         } catch {
-            let errorMsg = "Error installing \(manifest.name): \(errorMessage(from: error))"
+            let errorMsg = "Error enabling \(manifest.name): \(errorMessage(from: error))"
             log(errorMsg, type: .error)
             return (false, errorMsg)
         }
     }
     
     func bulkBindSkill(manifest: SkillManifest, productIDs: [String]) async {
-        log("Installing \(manifest.name) on \(productIDs.count) products...", type: .info)
+        log("Enabling \(manifest.name) on \(productIDs.count) products...", type: .info)
         
         var successCount = 0
         var failCount = 0
@@ -209,9 +209,9 @@ class SkillHubViewModel: ObservableObject {
         }
         
         if failCount == 0 {
-            log("Install completed: \(successCount) products updated", type: .success)
+            log("Enable completed: \(successCount) products updated", type: .success)
         } else {
-            log("Install completed: \(successCount) success, \(failCount) failed", type: .info)
+            log("Enable completed: \(successCount) success, \(failCount) failed", type: .info)
         }
     }
     

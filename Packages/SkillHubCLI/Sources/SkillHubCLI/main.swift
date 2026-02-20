@@ -196,8 +196,8 @@ struct CLI {
           add <source>                    Register or update an Agent Skill from SKILL.md (local dir/file, URL, or git repo)
           stage <source|skill-id>         Register if needed and copy skill directory into ~/.skillhub/skills/<id>
           unstage <skill-id>              Remove staged skill directory from ~/.skillhub/skills
-          install <skill-id> <product-id> [--mode copy]
-                                             Validate staged skill and record install mode
+          install <source|skill-id>
+                                             Register if needed and install into local skill store
           apply <source|skill-id> <product-id> [--mode copy]
                                              Register/stage/install/enable in one command
           setup <source|skill-id> <product-id> [--mode copy]

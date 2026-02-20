@@ -53,7 +53,7 @@ struct InstalledProductRowView: View {
                     .buttonStyle(.plain)
                 } else {
                     Button(action: { onInstall?() }) {
-                        Text("Install")
+                        Text("Enable")
                             .font(.caption)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)

@@ -53,12 +53,10 @@ swift run skillhub apply ../../Examples/skills/hello-world/skill.json opencode
 swift run skillhub setup ../../Examples/skills/hello-world/skill.json opencode
 ```
 
-Two-step setup (add + stage + install + enable):
+Two-step setup (install to local store + enable on product):
 
 ```bash
-swift run skillhub add ../../Examples/skills/hello-world/skill.json
-swift run skillhub stage ../../Examples/skills/hello-world/skill.json
-swift run skillhub install hello-world opencode
+swift run skillhub install ../../Examples/skills/hello-world/skill.json
 swift run skillhub enable hello-world opencode
 ```
 
@@ -72,6 +70,6 @@ swift run skillhub remove hello-world --purge
 ## Current MVP Status
 
 - State storage is JSON at `~/.skillhub/state.json` by default.
-- Adapter install/enable/disable actions are intentionally stubbed.
-- `install` command currently validates adapter + state and prints the planned operation.
+- `install` command installs a skill into the local SkillHub store (register + stage).
+- Product-side activation is handled by `enable`/`disable`.
 - SQLite, richer patching, and production product integrations are planned post-MVP.

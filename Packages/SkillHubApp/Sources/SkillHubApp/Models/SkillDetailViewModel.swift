@@ -43,7 +43,7 @@ class SkillDetailViewModel: ObservableObject {
         updateLocalSkill()
     }
     
-    func install(on productID: String) async {
+    func enable(on productID: String) async {
         guard let hubViewModel = hubViewModel else { return }
         _ = await hubViewModel.installSkill(manifest: skill.manifest, productID: productID)
         updateLocalSkill()

@@ -118,40 +118,30 @@ extension CLI {
     }
 
     func install(arguments: [String]) throws {
-        guard arguments.count >= 2 else {
-            throw SkillHubError.invalidManifest("Usage: install <skill-id> <product-id> [--mode copy]")
-        }
-
-        let skillID = arguments[0]
-        let productID = arguments[1]
-
-        let mode: InstallMode
-        if let modeIndex = arguments.firstIndex(of: "--mode"), arguments.indices.contains(modeIndex + 1) {
-            mode = try parseInstallMode(arguments[modeIndex + 1])
-        } else {
-            mode = .copy
+        guard let source = arguments.first else {
+            throw SkillHubError.invalidManifest("Usage: install <source|skill-id>")
         }
 
         let state = try store.loadState()
-        guard let skillRecord = state.skills.first(where: { $0.manifest.id == skillID }) else {
-            throw SkillHubError.invalidManifest("Skill not found: \(skillID)")
+        let manifest: SkillManifest
+        let sourceDirectory: URL
+
+        if let existing = state.skills.first(where: { $0.manifest.id == source }) {
+            manifest = existing.manifest
+            sourceDirectory = Self.expandPath(existing.manifestPath).deletingLastPathComponent()
+        } else {
+            let (resolvedManifest, resolvedPath) = try resolveAgentSkill(source: source)
+            let validationErrors = SchemaValidator.shared.validate(resolvedManifest)
+            if !validationErrors.isEmpty {
+                throw SkillHubError.invalidManifest("Manifest validation failed: \(validationErrors.joined(separator: ", "))")
+            }
+            manifest = resolvedManifest
+            sourceDirectory = URL(fileURLWithPath: resolvedPath).deletingLastPathComponent()
+            try store.upsertSkill(manifest: manifest, manifestPath: resolvedPath)
         }
 
-        let adapter = try adapterRegistry.adapter(for: productID)
-        let detection = adapter.detect()
-        guard detection.isDetected else {
-            throw SkillHubError.adapterEnvironmentInvalid("\(detection.reason). Run: doctor")
-        }
-
-        let stagedPath = stagedSkillPath(skillID: skillID)
-        guard FileManager.default.fileExists(atPath: stagedPath.path) else {
-            throw SkillHubError.invalidManifest("Skill is not staged: \(stagedPath.path). Run: stage \(skillRecord.manifestPath) or apply \(skillRecord.manifestPath) \(productID)")
-        }
-
-        let chosenMode = try adapter.install(skill: skillRecord.manifest, mode: mode)
-
-        try store.markInstalled(skillID: skillID, productID: productID, installMode: chosenMode)
-        print("Installed \(skillID) for \(productID). requestedMode=\(mode.rawValue) chosenMode=\(chosenMode.rawValue) stagedPath=\(stagedPath.path)")
+        let stagedPath = try stageSkillInStore(skillID: manifest.id, sourceDirectory: sourceDirectory)
+        print("Installed \(manifest.id) into local skill store at \(stagedPath.path)")
     }
 
     func apply(arguments: [String]) throws {
@@ -179,7 +169,7 @@ extension CLI {
                 throw SkillHubError.invalidManifest("Manifest validation failed: \(validationErrors.joined(separator: ", "))")
             }
 
-            print("[1/5] Registering skill \(manifest.id) from \(firstArgument)")
+            print("[1/4] Registering skill \(manifest.id) from \(firstArgument)")
             try store.upsertSkill(manifest: manifest, manifestPath: sourcePath)
             skillID = manifest.id
         }
@@ -192,7 +182,7 @@ extension CLI {
         let manifestURL = Self.expandPath(skillRecord.manifestPath)
 
         let sourceDirectory = manifestURL.deletingLastPathComponent()
-        print("[2/5] Staging \(skillID) from \(sourceDirectory.path)")
+        print("[2/4] Staging \(skillID) from \(sourceDirectory.path)")
         let stagedPath = try stageSkillInStore(skillID: skillID, sourceDirectory: sourceDirectory)
 
         let adapter = try adapterRegistry.adapter(for: productID)
@@ -201,13 +191,11 @@ extension CLI {
             throw SkillHubError.adapterEnvironmentInvalid("\(detection.reason). Run: doctor")
         }
 
-        print("[3/5] Installing \(skillID) into \(productID) (requested mode: \(mode.rawValue))")
-        let chosenMode = try adapter.install(skill: skillRecord.manifest, mode: mode)
-
-        print("[4/5] Enabling \(skillID) for \(productID) with mode \(chosenMode.rawValue)")
+        print("[3/4] Enabling \(skillID) for \(productID) with mode \(mode.rawValue)")
+        let chosenMode = mode
         try adapter.enable(skillID: skillID, mode: chosenMode)
 
-        print("[5/5] Updating state (installed + enabled)")
+        print("[4/4] Updating state (installed + enabled)")
         try store.markInstalled(skillID: skillID, productID: productID, installMode: chosenMode)
         try store.setEnabled(skillID: skillID, productID: productID, enabled: true)
 
@@ -251,13 +239,16 @@ extension CLI {
 
         if enabled {
             let state = try store.loadState()
-            guard let skillRecord = state.skills.first(where: { $0.manifest.id == skillID }) else {
+            guard state.skills.contains(where: { $0.manifest.id == skillID }) else {
                 throw SkillHubError.invalidManifest("Skill not found: \(skillID)")
             }
-            guard let installedMode = skillRecord.lastInstallModeByProduct[productID] else {
-                throw SkillHubError.invalidManifest("Skill \(skillID) is not installed for \(productID). Run: install \(skillID) \(productID) or apply <source|skill-id> \(productID)")
+            let stagedPath = stagedSkillPath(skillID: skillID)
+            guard FileManager.default.fileExists(atPath: stagedPath.path) else {
+                throw SkillHubError.invalidManifest("Skill is not installed in local store: \(stagedPath.path). Run: install \(skillID) or stage <source|skill-id>")
             }
-            try adapter.enable(skillID: skillID, mode: installedMode)
+            let mode: InstallMode = .copy
+            try adapter.enable(skillID: skillID, mode: mode)
+            try store.markInstalled(skillID: skillID, productID: productID, installMode: mode)
         } else {
             try adapter.disable(skillID: skillID)
         }

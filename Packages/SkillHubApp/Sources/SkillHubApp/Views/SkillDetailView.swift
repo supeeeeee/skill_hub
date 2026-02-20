@@ -53,7 +53,7 @@ struct SkillDetailView: View {
                 // Actions Toolbar
                 HStack(spacing: 16) {
                     Button(action: { showingBatchManagement = true }) {
-                        Label("Install to Products", systemImage: "plus.square.on.square")
+                        Label("Enable on Products", systemImage: "plus.square.on.square")
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
                     }
@@ -61,17 +61,28 @@ struct SkillDetailView: View {
                     .controlSize(.large)
                     
                     Button(role: .destructive, action: { showingDisableConfirm = true }) {
-                        Label("Disable Globally", systemImage: "power.circle")
+                        Label("Disable on All Products", systemImage: "power.circle")
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
                 }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Lifecycle")
+                        .font(.headline)
+                    Text("Source -> Installed in SkillHub -> Enabled on Product -> Disabled or Uninstalled on Product")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(10)
                 
-                // Installed Products
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Installed Products")
+                    Text("Product Activation")
                         .font(.title2)
                         .fontWeight(.semibold)
                     
@@ -83,7 +94,7 @@ struct SkillDetailView: View {
                             Text("No products detected")
                                 .font(.headline)
                                 .foregroundColor(.secondary)
-                            Text("Install products locally to install this skill.")
+                            Text("Install this skill to SkillHub first, then enable it per product.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -102,7 +113,7 @@ struct SkillDetailView: View {
                                         status: status,
                                         onInstall: {
                                             Task {
-                                                await detailViewModel.install(on: product.id)
+                                                await detailViewModel.enable(on: product.id)
                                             }
                                         },
                                         onToggle: {
