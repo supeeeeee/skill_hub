@@ -42,6 +42,11 @@ class SkillDetailViewModel: ObservableObject {
         await hubViewModel.disableSkillGlobally(manifest: skill.manifest)
         updateLocalSkill()
     }
+
+    func removeFromHub() async -> Bool {
+        guard let hubViewModel = hubViewModel else { return false }
+        return await hubViewModel.removeSkillFromHub(manifest: skill.manifest)
+    }
     
     func enable(on productID: String) async {
         guard let hubViewModel = hubViewModel else { return }

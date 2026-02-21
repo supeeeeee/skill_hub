@@ -81,7 +81,10 @@ struct SkillCardView: View {
         "opencode": "hammer.fill",
         "codex": "book.closed.fill",
         "cursor": "cursorarrow.rays",
-        "claude-code": "brain.head.profile"
+        "claude-code": "brain.head.profile",
+        "windsurf": "wind",
+        "aider": "person.badge.key",
+        "goose": "bird"
     ]
     
     private let productColors: [String: Color] = [
@@ -89,7 +92,10 @@ struct SkillCardView: View {
         "opencode": .blue,
         "codex": .purple,
         "cursor": .cyan,
-        "claude-code": .indigo
+        "claude-code": .indigo,
+        "windsurf": .teal,
+        "aider": .mint,
+        "goose": .brown
     ]
     
     var body: some View {
@@ -166,7 +172,7 @@ struct SkillCardView: View {
                 }
 
                 if skill.installedProducts.isEmpty {
-                    Text("Not installed")
+                    Text("Not Installed")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }

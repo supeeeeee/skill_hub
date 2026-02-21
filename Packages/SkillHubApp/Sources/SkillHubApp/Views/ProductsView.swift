@@ -68,13 +68,14 @@ struct ProductsView: View {
             viewModel.loadData()
         }
         .sheet(isPresented: $showingAddProductSheet) {
-            AddCustomProductSheet { name, id, skillsPath, executableNames, iconName in
+            AddCustomProductSheet { name, id, skillsPath, executableNames, iconName, configFilePath in
                 viewModel.addCustomProduct(
                     name: name,
                     id: id,
                     skillsDirectoryPath: skillsPath,
                     executableNamesRaw: executableNames,
-                    iconName: iconName
+                    iconName: iconName,
+                    configFilePath: configFilePath
                 )
             }
         }
@@ -119,12 +120,14 @@ private struct AddCustomProductSheet: View {
     @State private var skillsPath = ""
     @State private var executableNames = ""
     @State private var iconName = ""
+    @State private var configFilePath = ""
     @State private var showAdvanced = false
     @State private var idWasManuallyEdited = false
-    @State private var showFileImporter = false
+    @State private var showSkillsPathImporter = false
+    @State private var showConfigPathImporter = false
     @FocusState private var focusedField: InputField?
 
-    let onSave: (_ name: String, _ id: String, _ skillsPath: String, _ executableNames: String, _ iconName: String?) -> Void
+    let onSave: (_ name: String, _ id: String, _ skillsPath: String, _ executableNames: String, _ iconName: String?, _ configFilePath: String?) -> Void
 
     private var normalizedName: String {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -144,6 +147,10 @@ private struct AddCustomProductSheet: View {
 
     private var normalizedIcon: String {
         iconName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var normalizedConfigPath: String {
+        (configFilePath as NSString).expandingTildeInPath.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var canSave: Bool {
@@ -290,33 +297,64 @@ private struct AddCustomProductSheet: View {
                         }
                         
                         VStack(alignment: .leading, spacing: 8) {
-                             Text("Configuration")
+                             Text("Required")
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                                 .foregroundStyle(.secondary)
                                 .padding(.leading, 4)
-                                
+                                 
                             PathPickerField(
                                 placeholder: "Skills Folder Location",
                                 text: $skillsPath,
+                                iconName: "folder",
                                 actionLabel: "Browse"
                             ) {
-                                showFileImporter = true
+                                showSkillsPathImporter = true
                             }
-                            
-                            HStack(spacing: 12) {
-                                CleanTextField(
-                                    icon: "terminal",
-                                    placeholder: "Executables (cmd, cli)",
-                                    text: $executableNames
-                                )
-                                
-                                CleanTextField(
-                                    icon: "star",
-                                    placeholder: "SF Symbol",
-                                    text: $iconName
-                                )
-                                .frame(width: 140)
+
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    showAdvanced.toggle()
+                                }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: showAdvanced ? "chevron.down" : "chevron.right")
+                                        .font(.system(size: 11, weight: .semibold))
+                                    Text("Optional settings")
+                                        .font(.system(size: 13, weight: .medium))
+                                    Spacer()
+                                }
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 4)
+                            }
+                            .buttonStyle(.plain)
+
+                            if showAdvanced {
+                                VStack(spacing: 12) {
+                                    PathPickerField(
+                                        placeholder: "Config File Path (optional)",
+                                        text: $configFilePath,
+                                        iconName: "doc.text",
+                                        actionLabel: "Browse"
+                                    ) {
+                                        showConfigPathImporter = true
+                                    }
+
+                                    HStack(spacing: 12) {
+                                        CleanTextField(
+                                            icon: "terminal",
+                                            placeholder: "Executables (cmd, cli)",
+                                            text: $executableNames
+                                        )
+
+                                        CleanTextField(
+                                            icon: "star",
+                                            placeholder: "SF Symbol",
+                                            text: $iconName
+                                        )
+                                        .frame(width: 140)
+                                    }
+                                }
                             }
                         }
                     }
@@ -336,7 +374,14 @@ private struct AddCustomProductSheet: View {
                     Spacer()
                     
                     Button("Add Product") {
-                        onSave(normalizedName, effectiveID, normalizedPath, executableNames, normalizedIcon.isEmpty ? nil : normalizedIcon)
+                        onSave(
+                            normalizedName,
+                            effectiveID,
+                            normalizedPath,
+                            executableNames,
+                            normalizedIcon.isEmpty ? nil : normalizedIcon,
+                            normalizedConfigPath.isEmpty ? nil : normalizedConfigPath
+                        )
                         dismiss()
                     }
                     .buttonStyle(.borderedProminent)
@@ -372,7 +417,7 @@ private struct AddCustomProductSheet: View {
                 idWasManuallyEdited = cleaned != suggestedID(from: normalizedName)
             }
         }
-        .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
+        .fileImporter(isPresented: $showSkillsPathImporter, allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
             switch result {
             case .success(let urls):
                 if let url = urls.first {
@@ -380,6 +425,16 @@ private struct AddCustomProductSheet: View {
                 }
             case .failure(let error):
                 print("Error selecting folder: \(error.localizedDescription)")
+            }
+        }
+        .fileImporter(isPresented: $showConfigPathImporter, allowedContentTypes: [.json, .plainText], allowsMultipleSelection: false) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first {
+                    configFilePath = url.path(percentEncoded: false)
+                }
+            case .failure(let error):
+                print("Error selecting file: \(error.localizedDescription)")
             }
         }
     }
@@ -407,12 +462,13 @@ private struct AddCustomProductSheet: View {
 private struct PathPickerField: View {
     let placeholder: String
     @Binding var text: String
+    let iconName: String
     let actionLabel: String
     let onAction: () -> Void
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
-            Image(systemName: "folder")
+            Image(systemName: iconName)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: 24, alignment: .center)

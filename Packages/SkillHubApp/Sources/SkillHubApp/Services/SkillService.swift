@@ -105,6 +105,13 @@ private struct AppCustomProductAdapter: ProductAdapter {
 }
 
 final class SkillService {
+    struct UpdateCheckResult {
+        let checkedGitSkills: Int
+        let updatedSkillNames: [String]
+        let skippedNonGitSkills: Int
+        let unavailableSkills: [String]
+    }
+
     private struct SkillHubCommand {
         let executablePath: String
         let prefixArguments: [String]
@@ -158,7 +165,8 @@ final class SkillService {
         id: String,
         skillsDirectoryPath: String,
         executableNamesRaw: String,
-        iconName: String?
+        iconName: String?,
+        configFilePath: String?
     ) throws {
         let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedName.isEmpty else {
@@ -187,6 +195,23 @@ final class SkillService {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
 
+        let normalizedConfigPath: String?
+        if let rawConfigPath = configFilePath {
+            let trimmedConfig = (rawConfigPath as NSString)
+                .expandingTildeInPath
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedConfig.isEmpty {
+                normalizedConfigPath = nil
+            } else {
+                guard trimmedConfig.hasPrefix("/") else {
+                    throw SkillHubError.invalidManifest("Config file path must be an absolute path")
+                }
+                normalizedConfigPath = trimmedConfig
+            }
+        } else {
+            normalizedConfigPath = nil
+        }
+
         var cfg = SkillHubConfig.load()
         let builtInIDs = Set(Self.builtInAdapters().map(\.id))
 
@@ -208,6 +233,7 @@ final class SkillService {
             )
         )
         try cfg.save()
+        try skillStore.setProductConfigPath(productID: normalizedID, configPath: normalizedConfigPath)
         reloadAdapterRegistry()
     }
 
@@ -314,7 +340,11 @@ final class SkillService {
         }
 
         let stagedManifestPath = destPath.appendingPathComponent("SKILL.md").path
-        try skillStore.upsertSkill(manifest: manifest, manifestPath: stagedManifestPath)
+        try skillStore.upsertSkill(
+            manifest: manifest,
+            manifestPath: stagedManifestPath,
+            manifestSource: skillRecord.manifestSource
+        )
 
         let adapter = try adapterRegistry.adapter(for: productID)
         let finalMode = try adapter.resolveInstallMode(mode)
@@ -327,6 +357,10 @@ final class SkillService {
         let adapter = try adapterRegistry.adapter(for: productID)
         try adapter.disable(skillID: manifest.id)
         try skillStore.markUninstalled(skillID: manifest.id, productID: productID)
+    }
+
+    func removeSkillFromHub(skillID: String) throws {
+        try runSkillHub(arguments: ["remove", skillID, "--purge"], action: "remove skill")
     }
 
     func setSkillEnabled(
@@ -427,14 +461,207 @@ final class SkillService {
         try skillStore.setEnabled(skillID: manifest.id, productID: productID, enabled: true)
     }
 
-    func checkForUpdates(productID: String, skills: [InstalledSkillRecord]) throws -> String? {
+    func checkForUpdates(productID: String, skills: [InstalledSkillRecord]) throws -> UpdateCheckResult {
         let skillsToCheck = skills.filter { $0.installedProducts.contains(productID) }
-        guard let skill = skillsToCheck.first else {
-            return nil
+        guard !skillsToCheck.isEmpty else {
+            return UpdateCheckResult(
+                checkedGitSkills: 0,
+                updatedSkillNames: [],
+                skippedNonGitSkills: 0,
+                unavailableSkills: []
+            )
         }
 
-        try skillStore.setHasUpdate(skillID: skill.manifest.id, hasUpdate: true)
-        return skill.manifest.name
+        var checkedGitSkills = 0
+        var skippedNonGitSkills = 0
+        var updatedSkillNames: [String] = []
+        var unavailableSkills: [String] = []
+
+        for skill in skillsToCheck {
+            let source = skill.manifestSource?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard isGitSource(source) else {
+                skippedNonGitSkills += 1
+                try skillStore.setHasUpdate(skillID: skill.manifest.id, hasUpdate: false)
+                continue
+            }
+
+            checkedGitSkills += 1
+
+            do {
+                let hasUpdate = try hasGitRemoteUpdate(skill: skill)
+                try skillStore.setHasUpdate(skillID: skill.manifest.id, hasUpdate: hasUpdate)
+                if hasUpdate {
+                    updatedSkillNames.append(skill.manifest.name)
+                }
+            } catch {
+                unavailableSkills.append(skill.manifest.name)
+                try skillStore.setHasUpdate(skillID: skill.manifest.id, hasUpdate: false)
+            }
+        }
+
+        return UpdateCheckResult(
+            checkedGitSkills: checkedGitSkills,
+            updatedSkillNames: updatedSkillNames,
+            skippedNonGitSkills: skippedNonGitSkills,
+            unavailableSkills: unavailableSkills
+        )
+    }
+
+    private func isGitSource(_ source: String) -> Bool {
+        let normalized = source.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+        if normalized.hasPrefix("git@") || normalized.hasSuffix(".git") {
+            return true
+        }
+
+        guard let url = URL(string: normalized), let host = url.host else {
+            return false
+        }
+
+        return host.contains("github.com") || host.contains("gitlab.com") || host.contains("bitbucket.org")
+    }
+
+    private func hasGitRemoteUpdate(skill: InstalledSkillRecord) throws -> Bool {
+        let repoRoot = URL(fileURLWithPath: skill.manifestPath).deletingLastPathComponent()
+        let gitDirectory = repoRoot.appendingPathComponent(".git")
+        guard FileManager.default.fileExists(atPath: gitDirectory.path) else {
+            throw SkillHubError.invalidManifest("No git metadata found at \(repoRoot.path)")
+        }
+
+        let localSHA = try runGit(
+            arguments: ["-C", repoRoot.path, "rev-parse", "HEAD"],
+            action: "read local commit"
+        )
+
+        let branchName = try runGit(
+            arguments: ["-C", repoRoot.path, "rev-parse", "--abbrev-ref", "HEAD"],
+            action: "read current branch"
+        )
+
+        let remoteSHA: String
+        if branchName != "HEAD" {
+            let lsRemoteHead = try runGit(
+                arguments: ["-C", repoRoot.path, "ls-remote", "--heads", "origin", branchName],
+                action: "read remote branch"
+            )
+
+            if let sha = parseLSRemoteSHA(lsRemoteHead) {
+                remoteSHA = sha
+            } else {
+                let lsRemoteDefault = try runGit(
+                    arguments: ["-C", repoRoot.path, "ls-remote", "origin", "HEAD"],
+                    action: "read remote default branch"
+                )
+                guard let sha = parseLSRemoteSHA(lsRemoteDefault) else {
+                    throw SkillHubError.invalidManifest("Could not resolve remote SHA")
+                }
+                remoteSHA = sha
+            }
+        } else {
+            let lsRemoteDefault = try runGit(
+                arguments: ["-C", repoRoot.path, "ls-remote", "origin", "HEAD"],
+                action: "read remote default branch"
+            )
+            guard let sha = parseLSRemoteSHA(lsRemoteDefault) else {
+                throw SkillHubError.invalidManifest("Could not resolve remote SHA")
+            }
+            remoteSHA = sha
+        }
+
+        if localSHA == remoteSHA {
+            return false
+        }
+
+        let localBehindRemote = try runGitExitCode(
+            arguments: ["-C", repoRoot.path, "merge-base", "--is-ancestor", localSHA, remoteSHA],
+            action: "check ancestry"
+        ) == 0
+        if localBehindRemote {
+            return true
+        }
+
+        let remoteBehindLocal = try runGitExitCode(
+            arguments: ["-C", repoRoot.path, "merge-base", "--is-ancestor", remoteSHA, localSHA],
+            action: "check ancestry"
+        ) == 0
+
+        return !remoteBehindLocal
+    }
+
+    private func parseLSRemoteSHA(_ output: String) -> String? {
+        output
+            .split(separator: "\n")
+            .first?
+            .split(whereSeparator: { $0 == "\t" || $0 == " " })
+            .first
+            .map(String.init)
+            .flatMap { sha in
+                let trimmed = sha.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+    }
+
+    private func runGit(arguments: [String], action: String) throws -> String {
+        let process = Process()
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = arguments
+        var environment = ProcessInfo.processInfo.environment
+        environment["GIT_TERMINAL_PROMPT"] = "0"
+        process.environment = environment
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+
+        do {
+            try process.run()
+        } catch {
+            throw SkillHubError.invalidManifest("Failed to \(action): \(error.localizedDescription)")
+        }
+
+        process.waitUntilExit()
+        let stdoutOutput = readPipeOutput(outputPipe)
+        let stderrOutput = readPipeOutput(errorPipe)
+
+        guard process.terminationStatus == 0 else {
+            var details: [String] = []
+            if !stderrOutput.isEmpty {
+                details.append("stderr: \(stderrOutput)")
+            }
+            if !stdoutOutput.isEmpty {
+                details.append("stdout: \(stdoutOutput)")
+            }
+            let detailSuffix = details.isEmpty ? "" : ". " + details.joined(separator: " | ")
+            throw SkillHubError.invalidManifest(
+                "Failed to \(action) (exit code: \(process.terminationStatus), args: \(arguments))\(detailSuffix)"
+            )
+        }
+
+        return stdoutOutput
+    }
+
+    private func runGitExitCode(arguments: [String], action: String) throws -> Int32 {
+        let process = Process()
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = arguments
+        var environment = ProcessInfo.processInfo.environment
+        environment["GIT_TERMINAL_PROMPT"] = "0"
+        process.environment = environment
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+
+        do {
+            try process.run()
+        } catch {
+            throw SkillHubError.invalidManifest("Failed to \(action): \(error.localizedDescription)")
+        }
+
+        process.waitUntilExit()
+        return process.terminationStatus
     }
 
     private func iconName(for id: String, customIconName: String?) -> String {
@@ -448,6 +675,8 @@ final class SkillService {
         case "cursor": return "cursorarrow.rays"
         case "claude-code": return "bubble.left.and.bubble.right.fill"
         case "windsurf": return "wind"
+        case "aider": return "person.badge.key"
+        case "goose": return "bird"
         case "openclaw": return "shippingbox"
         case "codex": return "brain"
         case "opencode": return "terminal"
@@ -732,13 +961,42 @@ final class SkillService {
     }
 
     private static func builtInAdapters() -> [ProductAdapter] {
-        [
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let adapters: [ProductAdapter] = [
             OpenClawAdapter(),
             CodexAdapter(),
             OpenCodeAdapter(),
             ClaudeCodeAdapter(),
-            CursorAdapter()
+            CursorAdapter(),
+            AppCustomProductAdapter(
+                config: CustomProductConfig(
+                    id: "windsurf",
+                    name: "Windsurf",
+                    skillsDirectoryPath: "\(home)/.windsurf/skills",
+                    executableNames: ["windsurf"],
+                    iconName: "wind"
+                )
+            ),
+            AppCustomProductAdapter(
+                config: CustomProductConfig(
+                    id: "aider",
+                    name: "Aider",
+                    skillsDirectoryPath: "\(home)/.aider/skills",
+                    executableNames: ["aider"],
+                    iconName: "person.badge.key"
+                )
+            ),
+            AppCustomProductAdapter(
+                config: CustomProductConfig(
+                    id: "goose",
+                    name: "Goose",
+                    skillsDirectoryPath: "\(home)/.config/goose/skills",
+                    executableNames: ["goose"],
+                    iconName: "bird"
+                )
+            )
         ]
+        return adapters
     }
 
     private static func makeAdapterRegistry() -> AdapterRegistry {

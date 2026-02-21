@@ -66,13 +66,12 @@ public struct CursorAdapter: ProductAdapter {
 
     public func detect() -> ProductDetectionResult {
         if let path = ProductDetectionUtils.firstExistingPath(in: [
-            cursorAppSupportRoot.path,
-            cursorDotRoot.path,
-            "/Applications/Cursor.app"
+            "/Applications/Cursor.app",
+            "~/Applications/Cursor.app"
         ]) {
             return ProductDetectionResult(
                 isDetected: true,
-                reason: "Detected filesystem footprint at \(path)"
+                reason: "Detected Cursor app bundle at \(path)"
             )
         }
 
@@ -85,7 +84,7 @@ public struct CursorAdapter: ProductAdapter {
 
         return ProductDetectionResult(
             isDetected: false,
-            reason: "No Cursor footprint at \(cursorAppSupportRoot.path) or \(cursorDotRoot.path), and no 'cursor' executable found"
+            reason: "Cursor app bundle not found in /Applications or ~/Applications, and no 'cursor' executable found"
         )
     }
 

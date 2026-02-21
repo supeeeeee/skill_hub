@@ -36,7 +36,6 @@ struct InstalledProductRowView: View {
             
             HStack(spacing: 8) {
                 if status.isInstalled {
-                    // Status Badge (Enabled/Disabled)
                     StatusBadge(
                         text: status.isEnabled ? "Enabled" : "Disabled",
                         color: status.isEnabled ? .green : .orange,

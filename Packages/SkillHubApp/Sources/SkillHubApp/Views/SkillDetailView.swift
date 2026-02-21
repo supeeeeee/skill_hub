@@ -4,8 +4,10 @@ import SkillHubCore
 struct SkillDetailView: View {
     @StateObject private var detailViewModel: SkillDetailViewModel
     @EnvironmentObject var hubViewModel: SkillHubViewModel
+    @Environment(\.dismiss) private var dismiss
     @State private var showingBatchManagement = false
     @State private var showingDisableConfirm = false
+    @State private var showingRemoveConfirm = false
     
     init(skill: InstalledSkillRecord) {
         _detailViewModel = StateObject(wrappedValue: SkillDetailViewModel(skill: skill))
@@ -62,6 +64,14 @@ struct SkillDetailView: View {
                     
                     Button(role: .destructive, action: { showingDisableConfirm = true }) {
                         Label("Disable on All Products", systemImage: "power.circle")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+
+                    Button(role: .destructive, action: { showingRemoveConfirm = true }) {
+                        Label("Delete from SkillHub", systemImage: "trash")
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
                     }
@@ -148,6 +158,19 @@ struct SkillDetailView: View {
             }
         } message: {
             Text("Are you sure you want to disable this skill on all products? This will not uninstall the skill.")
+        }
+        .alert("Delete Skill", isPresented: $showingRemoveConfirm) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                Task {
+                    let removed = await detailViewModel.removeFromHub()
+                    if removed {
+                        dismiss()
+                    }
+                }
+            }
+        } message: {
+            Text("This removes the skill record and purges its staged files from SkillHub.")
         }
     }
 }

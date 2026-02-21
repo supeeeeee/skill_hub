@@ -247,6 +247,19 @@ class SkillHubViewModel: ObservableObject {
             log("Error uninstalling \(manifest.name): \(errorMessage(from: error))", type: .error)
         }
     }
+
+    func removeSkillFromHub(manifest: SkillManifest) async -> Bool {
+        do {
+            log("Removing \(manifest.name) from SkillHub...", type: .info)
+            try skillService.removeSkillFromHub(skillID: manifest.id)
+            loadData()
+            log("Removed \(manifest.name) from SkillHub", type: .success)
+            return true
+        } catch {
+            log("Failed to remove \(manifest.name): \(errorMessage(from: error))", type: .error)
+            return false
+        }
+    }
     
     func setSkillEnabled(manifest: SkillManifest, productID: String, enabled: Bool) async {
         do {
@@ -337,11 +350,26 @@ class SkillHubViewModel: ObservableObject {
         log("Checking for updates for \(productID)...", type: .info)
 
         do {
-            if let skillName = try skillService.checkForUpdates(productID: productID, skills: skills) {
-                log("Found update for \(skillName).", type: .success)
-                loadData()
+            let result = try skillService.checkForUpdates(productID: productID, skills: skills)
+            loadData()
+
+            if result.checkedGitSkills == 0 {
+                if result.skippedNonGitSkills == 0 {
+                    log("No installed skills to check for \(productID).", type: .info)
+                } else {
+                    log("No git-source skills to check for \(productID).", type: .info)
+                }
+                return
+            }
+
+            if result.updatedSkillNames.isEmpty {
+                log("No git updates found for \(productID). Checked \(result.checkedGitSkills) skill(s).", type: .info)
             } else {
-                log("No installed skills to check for \(productID).", type: .info)
+                log("Found updates for: \(result.updatedSkillNames.sorted().joined(separator: ", ")).", type: .success)
+            }
+
+            if !result.unavailableSkills.isEmpty {
+                log("Could not check updates for: \(result.unavailableSkills.sorted().joined(separator: ", ")).", type: .error)
             }
         } catch {
             log("Failed to check updates for \(productID): \(errorMessage(from: error))", type: .error)
@@ -368,7 +396,8 @@ class SkillHubViewModel: ObservableObject {
         id: String,
         skillsDirectoryPath: String,
         executableNamesRaw: String,
-        iconName: String?
+        iconName: String?,
+        configFilePath: String?
     ) {
         do {
             try skillService.addCustomProduct(
@@ -376,7 +405,8 @@ class SkillHubViewModel: ObservableObject {
                 id: id,
                 skillsDirectoryPath: skillsDirectoryPath,
                 executableNamesRaw: executableNamesRaw,
-                iconName: iconName
+                iconName: iconName,
+                configFilePath: configFilePath
             )
             loadData()
             log("Added custom product \(name)", type: .success)

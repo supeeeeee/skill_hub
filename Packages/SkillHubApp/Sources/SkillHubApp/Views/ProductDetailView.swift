@@ -571,7 +571,7 @@ struct SkillCard: View {
                             .cornerRadius(3)
                         
                         if isInstalled {
-                            Text(isEnabled ? "Active" : "Disabled")
+                            Text(isEnabled ? "Enabled" : "Disabled")
                                 .font(.system(size: 9, weight: .medium))
                                 .foregroundColor(isEnabled ? .green : .secondary)
                         }

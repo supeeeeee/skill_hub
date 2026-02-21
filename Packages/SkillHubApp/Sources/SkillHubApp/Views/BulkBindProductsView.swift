@@ -22,9 +22,17 @@ struct BatchManagementView: View {
             }
         }
     }
+
+    private func isSelectable(_ product: Product) -> Bool {
+        product.status == .active
+    }
+
+    private var selectableFilteredProductIDs: [String] {
+        filteredProducts.filter(isSelectable).map(\.id)
+    }
     
     private var allFilteredSelected: Bool {
-        !filteredProducts.isEmpty && selectedProductIDs.isSuperset(of: filteredProducts.map { $0.id })
+        !selectableFilteredProductIDs.isEmpty && selectedProductIDs.isSuperset(of: selectableFilteredProductIDs)
     }
     
     var body: some View {
@@ -140,11 +148,13 @@ struct BatchManagementView: View {
                     product: product,
                     isSelected: selectedProductIDs.contains(product.id),
                     isBound: skill.isBound(to: product.id),
-                    isEnabled: skill.enabledProducts.contains(product.id)
+                    isEnabled: skill.enabledProducts.contains(product.id),
+                    isSelectable: isSelectable(product)
                 )
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 .contentShape(Rectangle())
                 .onTapGesture {
+                    guard isSelectable(product) else { return }
                     toggleSelection(for: product)
                 }
             }
@@ -216,6 +226,7 @@ struct BatchManagementView: View {
     // MARK: - Actions
     
     private func toggleSelection(for product: Product) {
+        guard isSelectable(product) else { return }
         if selectedProductIDs.contains(product.id) {
             selectedProductIDs.remove(product.id)
         } else {
@@ -225,11 +236,9 @@ struct BatchManagementView: View {
     
     private func toggleSelectAll() {
         if allFilteredSelected {
-            // Deselect all visible
-            selectedProductIDs.subtract(filteredProducts.map { $0.id })
+            selectedProductIDs.subtract(selectableFilteredProductIDs)
         } else {
-            // Select all visible
-            selectedProductIDs.formUnion(filteredProducts.map { $0.id })
+            selectedProductIDs.formUnion(selectableFilteredProductIDs)
         }
     }
     
@@ -259,13 +268,14 @@ struct BatchProductRow: View {
     let isSelected: Bool
     let isBound: Bool
     let isEnabled: Bool
+    let isSelectable: Bool
     
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             // Checkbox
-            Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+            Image(systemName: isSelectable ? (isSelected ? "checkmark.square.fill" : "square") : "minus.square")
                 .font(.title2)
-                .foregroundColor(isSelected ? .accentColor : .secondary.opacity(0.4))
+                .foregroundColor(isSelectable ? (isSelected ? .accentColor : .secondary.opacity(0.4)) : .secondary.opacity(0.35))
                 .frame(width: 24)
             
             // Product Info
@@ -287,16 +297,28 @@ struct BatchProductRow: View {
             statusBadge
         }
         .padding(.vertical, 4)
+        .opacity(isSelectable ? 1.0 : 0.55)
     }
     
     @ViewBuilder
     var statusBadge: some View {
-        if isBound {
+        if !isSelectable {
+            Text("Not Detected")
+                .font(.caption)
+                .fontWeight(.medium)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.1))
+                )
+                .foregroundColor(.secondary)
+        } else if isBound {
             HStack(spacing: 6) {
                 Circle()
                     .fill(isEnabled ? Color.green : Color.orange)
                     .frame(width: 6, height: 6)
-                Text(isEnabled ? "Active" : "Disabled")
+                Text(isEnabled ? "Enabled" : "Disabled")
                     .fontWeight(.medium)
             }
             .font(.caption)

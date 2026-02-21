@@ -72,7 +72,7 @@ extension CLI {
             throw SkillHubError.invalidManifest("Manifest validation failed: \(validationErrors.joined(separator: ", "))")
         }
 
-        try store.upsertSkill(manifest: manifest, manifestPath: sourcePath)
+        try store.upsertSkill(manifest: manifest, manifestPath: sourcePath, manifestSource: source)
         print("Added skill \(manifest.id) from \(source)")
     }
 
@@ -96,7 +96,7 @@ extension CLI {
             }
             manifest = resolvedManifest
             sourceDirectory = URL(fileURLWithPath: resolvedPath).deletingLastPathComponent()
-            try store.upsertSkill(manifest: manifest, manifestPath: resolvedPath)
+            try store.upsertSkill(manifest: manifest, manifestPath: resolvedPath, manifestSource: source)
         }
 
         let stagedPath = try stageSkillInStore(skillID: manifest.id, sourceDirectory: sourceDirectory)
@@ -137,7 +137,7 @@ extension CLI {
             }
             manifest = resolvedManifest
             sourceDirectory = URL(fileURLWithPath: resolvedPath).deletingLastPathComponent()
-            try store.upsertSkill(manifest: manifest, manifestPath: resolvedPath)
+            try store.upsertSkill(manifest: manifest, manifestPath: resolvedPath, manifestSource: source)
         }
 
         let stagedPath = try stageSkillInStore(skillID: manifest.id, sourceDirectory: sourceDirectory)
@@ -170,7 +170,7 @@ extension CLI {
             }
 
             print("[1/4] Registering skill \(manifest.id) from \(firstArgument)")
-            try store.upsertSkill(manifest: manifest, manifestPath: sourcePath)
+            try store.upsertSkill(manifest: manifest, manifestPath: sourcePath, manifestSource: firstArgument)
             skillID = manifest.id
         }
 

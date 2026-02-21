@@ -4,7 +4,7 @@ import Darwin
 public protocol SkillStore {
     func loadState() throws -> SkillHubState
     func saveState(_ state: SkillHubState) throws
-    func upsertSkill(manifest: SkillManifest, manifestPath: String) throws
+    func upsertSkill(manifest: SkillManifest, manifestPath: String, manifestSource: String?) throws
     func setProductConfigPath(productID: String, configPath: String?) throws
     func setEnabled(skillID: String, productID: String, enabled: Bool) throws
     func markInstalled(skillID: String, productID: String, installMode: InstallMode) throws
@@ -91,18 +91,29 @@ public final class JSONSkillStore: SkillStore {
         return try body()
     }
 
-    public func upsertSkill(manifest: SkillManifest, manifestPath: String) throws {
+    public func upsertSkill(manifest: SkillManifest, manifestPath: String, manifestSource: String?) throws {
         var state = try loadState()
         state.updatedAt = Date()
+
+        let normalizedSource: String?
+        if let source = manifestSource?.trimmingCharacters(in: .whitespacesAndNewlines), !source.isEmpty {
+            normalizedSource = source
+        } else {
+            normalizedSource = nil
+        }
 
         if let index = state.skills.firstIndex(where: { $0.manifest.id == manifest.id }) {
             state.skills[index].manifest = manifest
             state.skills[index].manifestPath = manifestPath
+            if let normalizedSource {
+                state.skills[index].manifestSource = normalizedSource
+            }
         } else {
             state.skills.append(
                 InstalledSkillRecord(
                     manifest: manifest,
-                    manifestPath: manifestPath
+                    manifestPath: manifestPath,
+                    manifestSource: normalizedSource
                 )
             )
         }
